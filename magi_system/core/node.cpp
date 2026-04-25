@@ -6,7 +6,6 @@
 
 namespace magi {
 
-// ==================== NODE BASE CLASS ====================
 
 Node::Node(const std::string& name) 
     : name(name), nextPortNumber(1) {
@@ -34,7 +33,6 @@ std::shared_ptr<Interface> Node::addInterface(const std::string& macAddress) {
 void Node::removeInterface(uint32_t portNumber) {
     auto it = interfaces.find(portNumber);
     if (it != interfaces.end()) {
-        // Disconnect dari link jika terhubung
         if (it->second->getLink()) {
             it->second->getLink()->disconnect();
         }
@@ -65,7 +63,6 @@ void Node::printInfo() const {
     }
 }
 
-// ==================== HOST ====================
 
 Host::Host(const std::string& name, const std::string& ipAddress, const std::string& defaultGateway)
     : Node(name), ipAddress(ipAddress), defaultGateway(defaultGateway) {
@@ -74,7 +71,6 @@ Host::Host(const std::string& name, const std::string& ipAddress, const std::str
 }
 
 void Host::handleReceive(Interface* incomingInterface, const std::vector<uint8_t>& rawBytes) {
-    // Untuk Milestone 0: hanya log penerimaan
     uint32_t portNum = 0;
     for (const auto& pair : interfaces) {
         if (pair.second.get() == incomingInterface) {
@@ -109,7 +105,6 @@ void Host::printInfo() const {
     }
 }
 
-// ==================== SWITCH ====================
 
 Switch::Switch(const std::string& name, uint32_t numPorts)
     : Node(name), numPorts(numPorts) {
@@ -120,7 +115,6 @@ Switch::Switch(const std::string& name, uint32_t numPorts)
 }
 
 void Switch::handleReceive(Interface* incomingInterface, const std::vector<uint8_t>& rawBytes) {
-    // Untuk Milestone 0: hanya log penerimaan (flooding akan diimplementasi di M1)
     uint32_t portNum = 0;
     for (const auto& pair : interfaces) {
         if (pair.second.get() == incomingInterface) {
@@ -154,15 +148,12 @@ void Switch::printInfo() const {
     }
 }
 
-// ==================== ROUTER ====================
 
 Router::Router(const std::string& name)
     : Node(name) {
-    // Router biasanya mulai tanpa interface (akan ditambahkan saat konfigurasi)
 }
 
 void Router::handleReceive(Interface* incomingInterface, const std::vector<uint8_t>& rawBytes) {
-    // Untuk Milestone 0: hanya log penerimaan
     uint32_t portNum = 0;
     for (const auto& pair : interfaces) {
         if (pair.second.get() == incomingInterface) {
@@ -202,4 +193,4 @@ void Router::printInfo() const {
     }
 }
 
-} // namespace magi
+} 

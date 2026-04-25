@@ -23,4 +23,4 @@ std::vector<uint8_t> Packet::hexToBytes(const std::string& hex) {
     return bytes;
 }
 
-} // namespace magi
+}

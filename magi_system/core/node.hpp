@@ -9,15 +9,13 @@
 
 namespace magi {
 
-// Forward declarations
 class Interface;
 class Packet;
 
-// Node adalah base class untuk Host, Switch, Router
 class Node {
 protected:
     std::string name;
-    std::map<uint32_t, std::shared_ptr<Interface>> interfaces; // port_number -> Interface
+    std::map<uint32_t, std::shared_ptr<Interface>> interfaces; 
     uint32_t nextPortNumber;
 
 public:
@@ -28,31 +26,22 @@ public:
     std::string getName() const { return name; }
     std::map<uint32_t, std::shared_ptr<Interface>> getInterfaces() const { return interfaces; }
     
-    // Mendapatkan interface berdasarkan nomor port
     std::shared_ptr<Interface> getInterface(uint32_t portNumber) const;
     
-    // Menambahkan interface baru dengan MAC auto-generate
     std::shared_ptr<Interface> addInterface();
     
-    // Menambahkan interface dengan MAC spesifik
     std::shared_ptr<Interface> addInterface(const std::string& macAddress);
     
-    // Menghapus interface berdasarkan nomor port
     void removeInterface(uint32_t portNumber);
     
-    // Mendapatkan port number dari interface
     uint32_t getPortNumber(const std::shared_ptr<Interface>& iface) const;
     
-    // Handler untuk menerima data dari interface (akan di-override oleh subclass)
     virtual void handleReceive(Interface* incomingInterface, const std::vector<uint8_t>& rawBytes) = 0;
     
-    // Mendapatkan tipe node (untuk identifikasi)
     virtual std::string getType() const = 0;
     
-    // Menampilkan informasi node
     virtual void printInfo() const;
     
-    // Serialize node ke format JSON-like (untuk save/load)
     virtual std::string toJson() const = 0;
 };
 
