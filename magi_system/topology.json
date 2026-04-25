@@ -1,0 +1,38 @@
+{
+  "hosts": [
+    {
+      "name": "H1",
+      "ip_address": "192.168.1.10/24",
+      "default_gateway": "192.168.1.1"
+    },
+    {
+      "name": "H2",
+      "ip_address": "192.168.1.11/24",
+      "default_gateway": "192.168.1.1"
+    }
+  ],
+  "switches": [
+    {
+      "name": "SW1",
+      "num_ports": 8,
+      "vlans": []
+    }
+  ],
+  "routers": [
+    {
+      "name": "R1",
+      "interfaces": [],
+      "routing_table": []
+    }
+  ],
+  "links": [
+    {
+      "endpoints": ["H1", "SW1:1"],
+      "delay": 5
+    },
+    {
+      "endpoints": ["H2", "SW1:2"],
+      "delay": 5
+    }
+  ]
+}
