@@ -1,64 +1,75 @@
-# Compiler settings
-CXX = g++
-CXXFLAGS = -std=c++11 -Wall -Wextra -I.
-LDFLAGS = 
+# Compiler and build settings
+CXX := g++
+STD := -std=c++11
+WARN := -Wall -Wextra
+INCLUDES := -I.
+CPPFLAGS := $(INCLUDES)
+CXXFLAGS := $(STD) $(WARN)
+LDFLAGS :=
 
-# Target executable
-TARGET = magi_system
-
-# Build directory for object files
-BUILD_DIR = build
+# Targets and directories
+TARGET := magi_system
+BUILD_DIR := build
 
 # Source files
-SOURCES = main.cpp \
-          cli.cpp \
-          core/packet.cpp \
-          core/interface.cpp \
-          core/link.cpp \
-          core/node.cpp
+SOURCES := \
+    main.cpp \
+    cli.cpp \
+    core/packet.cpp \
+    core/interface.cpp \
+    core/link.cpp \
+    core/node.cpp \
+    layer2/ethernet.cpp \
+    layer2/arp.cpp \
+    layer2/host.cpp \
+    layer2/switch.cpp
 
-# Object files (in build directory)
-OBJECTS = $(patsubst %.cpp,$(BUILD_DIR)/%.o,$(SOURCES))
+# Build artifacts
+OBJECTS := $(patsubst %.cpp,$(BUILD_DIR)/%.o,$(SOURCES))
+DEPS := $(OBJECTS:.o=.d)
 
-# Header files
-HEADERS = cli.hpp \
-          core/packet.hpp \
-          core/interface.hpp \
-          core/link.hpp \
-          core/node.hpp
+.PHONY: all run makerun clean rebuild debug release run-win clean-win mingw32-makerun
 
 # Default target
 all: $(TARGET)
 
-# Create build directories and compile
+# Link executable
 $(TARGET): $(OBJECTS)
-	$(CXX) $(OBJECTS) -o $(TARGET) $(LDFLAGS)
+	$(CXX) $(OBJECTS) -o $@ $(LDFLAGS)
 
-# Compile source files to object files (in build directory)
-$(BUILD_DIR)/%.o: %.cpp $(HEADERS)
-	@mkdir -p $(BUILD_DIR)/core
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+# Compile with auto-generated dependency files
+$(BUILD_DIR)/%.o: %.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -MMD -MP -c $< -o $@
 
-# Run the simulator
+# Include dependencies when present
+-include $(DEPS)
+
+# Run helpers
 run: $(TARGET)
 	./$(TARGET)
 
-.PHONY: clean rebuild all run
+# Convenience alias used in README
+makerun: run
 
-# Clean build files
+# Build modes
+debug: CXXFLAGS += -O0 -g
+debug: rebuild
+
+release: CXXFLAGS += -O2
+release: rebuild
+
+# Cleanup
 clean:
 	rm -rf $(BUILD_DIR)
 	rm -f $(TARGET) $(TARGET).exe
 
-# Clean and rebuild
 rebuild: clean all
 
-# Run on Windows
+# Windows-friendly aliases
 run-win: $(TARGET)
 	$(TARGET).exe
 
-# Clean on Windows
 clean-win: clean
 
-# Phony targets
-.PHONY: all run clean rebuild clean-win run-win
+mingw32-makerun: run-win

@@ -19,11 +19,13 @@ std::shared_ptr<Link> Link::create(std::shared_ptr<Interface> interfaceA, std::s
 
 void Link::transmit(Interface* senderInterface, const std::vector<uint8_t>& rawBytes) {
     std::shared_ptr<Interface> receiver = nullptr;
-    
-    if (senderInterface == interfaceA.get()) {
-        receiver = interfaceB;
-    } else if (senderInterface == interfaceB.get()) {
-        receiver = interfaceA;
+    auto a = interfaceA.lock();
+    auto b = interfaceB.lock();
+
+    if (a && senderInterface == a.get()) {
+        receiver = b;
+    } else if (b && senderInterface == b.get()) {
+        receiver = a;
     }
     
     if (!receiver) {
@@ -38,24 +40,28 @@ void Link::transmit(Interface* senderInterface, const std::vector<uint8_t>& rawB
 }
 
 bool Link::hasInterface(const std::shared_ptr<Interface>& iface) const {
-    return (iface == interfaceA) || (iface == interfaceB);
+    auto a = interfaceA.lock();
+    auto b = interfaceB.lock();
+    return (a && a == iface) || (b && b == iface);
 }
 
 std::shared_ptr<Interface> Link::getOtherEnd(const std::shared_ptr<Interface>& iface) const {
-    if (iface == interfaceA) return interfaceB;
-    if (iface == interfaceB) return interfaceA;
+    auto a = interfaceA.lock();
+    auto b = interfaceB.lock();
+    if (a && iface == a) return b;
+    if (b && iface == b) return a;
     return nullptr;
 }
 
 void Link::disconnect() {
-    if (interfaceA) {
-        interfaceA->setLink(nullptr);
+    if (auto a = interfaceA.lock()) {
+        a->setLink(nullptr);
     }
-    if (interfaceB) {
-        interfaceB->setLink(nullptr);
+    if (auto b = interfaceB.lock()) {
+        b->setLink(nullptr);
     }
-    interfaceA = nullptr;
-    interfaceB = nullptr;
+    interfaceA.reset();
+    interfaceB.reset();
 }
 
 } 

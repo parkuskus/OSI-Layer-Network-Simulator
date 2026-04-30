@@ -13,8 +13,8 @@ class Interface;
 
 class Link : public std::enable_shared_from_this<Link> {
 private:
-    std::shared_ptr<Interface> interfaceA;
-    std::shared_ptr<Interface> interfaceB;
+    std::weak_ptr<Interface> interfaceA;
+    std::weak_ptr<Interface> interfaceB;
     uint32_t delayMs;  
     
     Link(std::shared_ptr<Interface> interfaceA, 
@@ -27,8 +27,8 @@ public:
                                         uint32_t delayMs = 0);
     
     // Getters
-    std::shared_ptr<Interface> getInterfaceA() const { return interfaceA; }
-    std::shared_ptr<Interface> getInterfaceB() const { return interfaceB; }
+    std::shared_ptr<Interface> getInterfaceA() const { return interfaceA.lock(); }
+    std::shared_ptr<Interface> getInterfaceB() const { return interfaceB.lock(); }
     uint32_t getDelay() const { return delayMs; }
     
     // Setters

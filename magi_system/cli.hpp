@@ -3,6 +3,8 @@
 
 #include "core/node.hpp"
 #include "core/link.hpp"
+#include "layer2/host.hpp"
+#include "layer2/switch.hpp"
 #include <map>
 #include <string>
 #include <memory>
@@ -36,6 +38,12 @@ private:
     void cmdSave(const std::vector<std::string>& args);
     void cmdLoad(const std::vector<std::string>& args);
     void cmdShow(const std::vector<std::string>& args);
+    void cmdMac(const std::vector<std::string>& args);
+    void cmdArp(const std::vector<std::string>& args);
+    void cmdSetIp(const std::vector<std::string>& args);
+    void cmdSetGateway(const std::vector<std::string>& args);
+    void cmdVlan(const std::vector<std::string>& args);
+    void cmdPing(const std::vector<std::string>& args);
     void cmdHelp();
     
     std::shared_ptr<Node> findNode(const std::string& name);
