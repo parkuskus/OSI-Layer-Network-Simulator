@@ -14,11 +14,7 @@ Malaikat ke-11, Ireul, telah menginfeksi dan menghancurkan seluruh protokol komu
 
 ## Prerequisites & Setup
 
-* **Bahasa Pemrograman:** [Isi dengan bahasa pilihan kelompok Anda, e.g., Python, C++, Go].
-* Pilihan bahasa pemrograman memengaruhi *Language Multiplier* pada penilaian akhir.
-* Penggunaan *Large Language Models* (LLM) diizinkan sebagai asisten belajar, namun setiap baris kode wajib dipahami seutuhnya.
-* Gagal menjelaskan alur eksekusi saat demonstrasi akan dianggap sebagai plagiarisme.
-* **DILARANG** menggunakan API jaringan bawaan sistem operasi atau *library* simulasi jaringan pihak ketiga.
+* **Bahasa Pemrograman:** C++
 
 ## Daftar Periksa Pencapaian (Milestones)
 
@@ -64,61 +60,74 @@ g++-std=c++11-omagi_systemmain.cppcli.cppcore/packet.cppcore/interface.cppcore/l
 
 ## Struktur Proyek
 
-```
-
+```text
 magi_system/
-
-├── Makefile              # Build script
-
-├── README.md             # Dokumentasi ini
-
-├── main.cpp              # Entry point program
-
-├── cli.cpp/hpp           # Command Line Interface
-
-└── core/                 # Milestone 0: Fondasi
-
-    ├── packet.cpp/hpp    # Base class untuk serialize/deserialize
-
-    ├── interface.cpp/hpp # Network interface/port
-
-    ├── link.cpp/hpp      # Virtual cable dengan delay
-
-    └── node.cpp/hpp      # Base class: Host, Switch, Router
-
+├── Makefile
+├── main.cpp
+├── cli.cpp
+├── cli.hpp
+├── core/
+│   ├── packet.cpp / packet.hpp
+│   ├── interface.cpp / interface.hpp
+│   ├── link.cpp / link.hpp
+│   └── node.cpp / node.hpp
+└── layer2/
+    ├── ethernet.cpp / ethernet.hpp
+    ├── arp.cpp / arp.hpp
+    ├── host.cpp / host.hpp
+    └── switch.cpp / switch.hpp
 ```
+
+Direktori `layer3/`, `layer4/`, `layer7/`, dan `middleboxes/` disiapkan untuk milestone berikutnya.
+
+## Fitur Saat Ini
+
+* Create node: `host`, `switch`, `router`
+* Link dan unlink antar-port
+* Tampilkan topologi dan detail node
+* Set IP address dan default gateway host
+* Konfigurasi VLAN access/trunk pada switch
+* Lihat MAC table switch dan ARP cache host
+* Ping sederhana antar host
+* Simpan dan muat topologi dalam JSON
 
 ## Perintah CLI
 
 ### Manajemen Topologi
 
--`create <name> <host|switch|router> [jumlah_port]` - Membuat node baru
+* `create <name> <host|switch|router> [jumlah_port]` - Membuat node baru
+* `link <device1> <device2> [delay_ms]` - Menghubungkan dua node atau port
+* `unlink <device1> <device2>` - Memutuskan koneksi
+* `topology` - Menampilkan seluruh topologi
+* `show <node_name>` - Menampilkan detail node
 
--`link <device1> <device2> [delay_ms]` - Menghubungkan dua device
+### Konfigurasi Node
 
--`unlink <device1> <device2>` - Memutuskan koneksi
+* `setip <host_name> <ip_address>` - Set IP host
+* `setgw <host_name> <gateway_ip>` - Set default gateway host
+* `vlan access <switch_name> <port> <vlan_id>` - Set port switch sebagai access VLAN
+* `vlan trunk <switch_name> <port> [native_vlan]` - Set port switch sebagai trunk
 
--`topology` - Menampilkan topologi
+### Monitoring
 
--`show <node_name>` - Menampilkan info node
+* `mac <switch_name>` atau `<switch_name> mac` - Tampilkan MAC table switch
+* `arp <host_name>` atau `<host_name> arp` - Tampilkan ARP cache host
+* `ping <host_name> <target_ip>` atau `<host_name> ping <target_ip>` - Kirim ping
 
 ### File Operations
 
--`save [filename]` - Menyimpan topologi ke JSON (default: topology.json)
-
--`load [filename]` - Memuat topologi dari JSON
+* `save [filename]` - Simpan topologi ke JSON, default `topology.json`
+* `load [filename]` - Muat topologi dari JSON
 
 ### General
 
--`help` - Menampilkan bantuan
-
--`exit` / `quit` - Keluar dari simulator
+* `help` - Tampilkan daftar perintah
+* `exit` / `quit` - Keluar dari simulator
 
 ## Format Endpoint
 
--`NodeName` - Untuk host (asumsi port 1)
-
--`NodeName:Port` - Untuk switch/router (contoh: SW1:1, R1:2)
+* `NodeName` - Untuk host, otomatis memakai port 1
+* `NodeName:Port` - Untuk switch/router, contoh `SW1:1` atau `R1:2`
 
 ## Contoh Penggunaan
 
@@ -244,36 +253,12 @@ Menghentikan Magi System Simulator...
 
 ```
 
-## Catatan Implementasi Milestone 0
+## Milestones
 
-### Interface & Link
-
-- Interface merepresentasikan port/kartu jaringan pada Node
-- Link merepresentasikan kabel virtual dengan properti delay
-- Koneksi bersifat blocking (sinkron) dengan simulasi propagation delay
-
-### Serialization & Deserialization
-
-- Kelas `Packet` menyediakan interface untuk konversi objek ke byte-array
-- Setiap protokol layer akan meng-extend kelas ini
-
-### MAC Address
-
-- MAC address di-generate otomatis untuk setiap interface
-- Format: AA:BB:CC:DD:EE:FF (6 bytes dalam hex)
-
-### Node Types
-
--**Host**: Memiliki 1 interface secara default, dengan IP dan default gateway
-
--**Switch**: Memiliki N interface (default 24), mendukung VLAN (Milestone 1)
-
--**Router**: Memiliki interface dinamis, mendukung routing table (Milestone 2)
-
-Centang (*checklist*) kotak di bawah ini sesuai dengan *layer* yang telah kelompok kalian selesaikan:
+Centang sesuai implementasi yang sudah selesai.
 
 * [X] **Milestone 0: Fondasi Simulasi** - Pembuatan kelas fisik (*Interface*, *Link*), struktur dasar *Packet* yang mendukung konversi ke *byte* mentah, dan memuat topologi JSON.
-* [ ] **Milestone 1: Data Link Layer (L2)** - Implementasi *Ethernet Frame*, logika *Switching* (*VLAN-aware*), dan antrean IP Packet menggunakan *ARP Cache*.
+* [X] **Milestone 1: Data Link Layer (L2)** - Implementasi *Ethernet Frame*, logika *Switching* (*VLAN-aware*), dan antrean IP Packet menggunakan *ARP Cache*.
 * [ ] **Milestone 2: Network Layer (L3)** - Implementasi resolusi *Longest Prefix Match Routing*, *Inter-VLAN Routing*, modifikasi parameter TTL, kalkulasi *Checksum* IPv4, dan pengiriman *ICMP Error Messages*.
 * [ ] **Milestone 3: Transport Layer (L4)** - Penyusunan *State Machine* TCP (*3-Way Handshake*, *Receive Buffers*, *4-Way Teardown*), protokol UDP, dan kalkulasi *Pseudo-Header*.
 * [ ] **Milestone 4: Application Layer (L7)** - Pembuatan *Wrapper API* `MagiSocket` untuk mengabstraksi komunikasi OS, serta perakitan layanan mandiri DHCP, DNS, dan server HTTP.
@@ -281,9 +266,7 @@ Centang (*checklist*) kotak di bawah ini sesuai dengan *layer* yang telah kelomp
 
 ## Pembagian Tugas
 
-[Deskripsikan dengan jelas anggota kelompok dan *milestone* yang mereka kerjakan, ini wajib diisi sesuai instruksi pengumpulan repositori.]
-
-* **Anggota 1 (NIM):** [Bagian yang dikerjakan]
-* **Anggota 2 (NIM):** [Bagian yang dikerjakan]
-* **Anggota 3 (NIM):** [Bagian yang dikerjakan]
-* **Anggota 4/5 (NIM):** [Bagian yang dikerjakan]
+* **Muhammad Aufar Rizqi Kusuma (13524061):** Coming soon
+* **Kurt Mikhael Purba (13524065):** Milestone 0
+* **Bryan Pratama Putra Hendra (13524067):** Coming soon
+* **Philipp Hamara (13524101):** Milestone 1

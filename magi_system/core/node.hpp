@@ -45,46 +45,6 @@ public:
     virtual std::string toJson() const = 0;
 };
 
-// Host Node
-class Host : public Node {
-private:
-    std::string ipAddress;
-    std::string defaultGateway;
-
-public:
-    Host(const std::string& name, const std::string& ipAddress = "", const std::string& defaultGateway = "");
-    
-    // Getters dan Setters
-    std::string getIpAddress() const { return ipAddress; }
-    std::string getDefaultGateway() const { return defaultGateway; }
-    void setIpAddress(const std::string& ip) { ipAddress = ip; }
-    void setDefaultGateway(const std::string& gateway) { defaultGateway = gateway; }
-    
-    // Override virtual methods
-    void handleReceive(Interface* incomingInterface, const std::vector<uint8_t>& rawBytes) override;
-    std::string getType() const override { return "host"; }
-    std::string toJson() const override;
-    void printInfo() const override;
-};
-
-// Switch Node
-class Switch : public Node {
-private:
-    uint32_t numPorts;
-
-public:
-    Switch(const std::string& name, uint32_t numPorts = 24);
-    
-    // Getters dan Setters
-    uint32_t getNumPorts() const { return numPorts; }
-    void setNumPorts(uint32_t num) { numPorts = num; }
-    
-    // Override virtual methods
-    void handleReceive(Interface* incomingInterface, const std::vector<uint8_t>& rawBytes) override;
-    std::string getType() const override { return "switch"; }
-    std::string toJson() const override;
-    void printInfo() const override;
-};
 
 // Router Node
 class Router : public Node {

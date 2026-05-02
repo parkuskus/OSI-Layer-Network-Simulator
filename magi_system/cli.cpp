@@ -39,6 +39,12 @@ void CLI::executeCommand(const std::vector<std::string>& args) {
     
     if (cmd == "create") {
         cmdCreate(args);
+    } else if (cmd == "setip") {
+        cmdSetIp(args);
+    } else if (cmd == "setgw") {
+        cmdSetGateway(args);
+    } else if (cmd == "vlan") {
+        cmdVlan(args);
     } else if (cmd == "link") {
         cmdLink(args);
     } else if (cmd == "unlink") {
@@ -57,9 +63,77 @@ void CLI::executeCommand(const std::vector<std::string>& args) {
         running = false;
         std::cout << "Menghentikan Magi System Simulator..." << std::endl;
     } else {
+        auto dispatchEntityCommand = [&](const std::string& entityName, const std::string& rawSubcmd, const std::vector<std::string>& extraArgs) -> bool {
+            auto node = findNode(entityName);
+            if (!node) return false;
+
+            std::string subcmd = rawSubcmd;
+            std::transform(subcmd.begin(), subcmd.end(), subcmd.begin(), ::tolower);
+
+            if (subcmd == "mac") {
+                cmdMac({"mac", entityName});
+                return true;
+            }
+            if (subcmd == "arp") {
+                cmdArp({"arp", entityName});
+                return true;
+            }
+            if (subcmd == "ping" && !extraArgs.empty()) {
+                cmdPing({"ping", entityName, extraArgs[0]});
+                return true;
+            }
+
+            return false;
+        };
+
+        // Format 1: <entity> <subcommand> [args]
+        if (args.size() >= 2) {
+            std::vector<std::string> extraArgs;
+            if (args.size() > 2) {
+                extraArgs.assign(args.begin() + 2, args.end());
+            }
+            if (dispatchEntityCommand(args[0], args[1], extraArgs)) {
+                return;
+            }
+        }
+
+        // Format 2 (alias): <subcommand> <entity> [args]
+        if ((cmd == "mac" || cmd == "arp" || cmd == "ping") && args.size() >= 2) {
+            std::vector<std::string> extraArgs;
+            if (args.size() > 2) {
+                extraArgs.assign(args.begin() + 2, args.end());
+            }
+            if (dispatchEntityCommand(args[1], cmd, extraArgs)) {
+                return;
+            }
+        }
+
         std::cout << "Perintah tidak dikenal: " << cmd << std::endl;
         std::cout << "Ketik 'help' untuk melihat daftar perintah." << std::endl;
     }
+}
+
+void CLI::cmdPing(const std::vector<std::string>& args) {
+    if (args.size() < 3) {
+        std::cout << "Penggunaan: ping <host_name> <target_ip> atau <host_name> ping <target_ip>" << std::endl;
+        return;
+    }
+
+    auto node = findNode(args[1]);
+    if (!node) {
+        std::cout << "Error: Node '" << args[1] << "' tidak ditemukan." << std::endl;
+        return;
+    }
+
+    auto host = std::dynamic_pointer_cast<Host>(node);
+    if (!host) {
+        std::cout << "Error: Node '" << args[1] << "' bukan host." << std::endl;
+        return;
+    }
+
+    std::string payload = "PING|" + host->getIpAddress() + "|" + args[2];
+    host->sendLayer3Packet(args[2], std::vector<uint8_t>(payload.begin(), payload.end()));
+    std::cout << "[" << args[1] << "] kirim PING ke " << args[2] << std::endl;
 }
 
 void CLI::cmdCreate(const std::vector<std::string>& args) {
@@ -480,6 +554,137 @@ void CLI::cmdShow(const std::vector<std::string>& args) {
     }
 }
 
+void CLI::cmdMac(const std::vector<std::string>& args) {
+    if (args.size() < 2) {
+        std::cout << "Penggunaan: mac <switch_name> atau <switch_name> mac" << std::endl;
+        return;
+    }
+
+    auto node = findNode(args[1]);
+    if (!node) {
+        std::cout << "Error: Node '" << args[1] << "' tidak ditemukan." << std::endl;
+        return;
+    }
+
+    auto sw = std::dynamic_pointer_cast<Switch>(node);
+    if (!sw) {
+        std::cout << "Error: Node '" << args[1] << "' bukan switch." << std::endl;
+        return;
+    }
+
+    sw->printMacTable();
+}
+
+void CLI::cmdArp(const std::vector<std::string>& args) {
+    if (args.size() < 2) {
+        std::cout << "Penggunaan: arp <host_name> atau <host_name> arp" << std::endl;
+        return;
+    }
+
+    auto node = findNode(args[1]);
+    if (!node) {
+        std::cout << "Error: Node '" << args[1] << "' tidak ditemukan." << std::endl;
+        return;
+    }
+
+    auto host = std::dynamic_pointer_cast<Host>(node);
+    if (!host) {
+        std::cout << "Error: Node '" << args[1] << "' bukan host." << std::endl;
+        return;
+    }
+
+    host->printArpCache();
+}
+
+void CLI::cmdSetIp(const std::vector<std::string>& args) {
+    if (args.size() < 3) {
+        std::cout << "Penggunaan: setip <host_name> <ip_address>" << std::endl;
+        return;
+    }
+
+    auto node = findNode(args[1]);
+    if (!node) {
+        std::cout << "Error: Node '" << args[1] << "' tidak ditemukan." << std::endl;
+        return;
+    }
+
+    auto host = std::dynamic_pointer_cast<Host>(node);
+    if (!host) {
+        std::cout << "Error: Node '" << args[1] << "' bukan host." << std::endl;
+        return;
+    }
+
+    host->setIpAddress(args[2]);
+    std::cout << "IP host '" << args[1] << "' di-set ke " << args[2] << std::endl;
+}
+
+void CLI::cmdSetGateway(const std::vector<std::string>& args) {
+    if (args.size() < 3) {
+        std::cout << "Penggunaan: setgw <host_name> <gateway_ip>" << std::endl;
+        return;
+    }
+
+    auto node = findNode(args[1]);
+    if (!node) {
+        std::cout << "Error: Node '" << args[1] << "' tidak ditemukan." << std::endl;
+        return;
+    }
+
+    auto host = std::dynamic_pointer_cast<Host>(node);
+    if (!host) {
+        std::cout << "Error: Node '" << args[1] << "' bukan host." << std::endl;
+        return;
+    }
+
+    host->setDefaultGateway(args[2]);
+    std::cout << "Gateway host '" << args[1] << "' di-set ke " << args[2] << std::endl;
+}
+
+void CLI::cmdVlan(const std::vector<std::string>& args) {
+    if (args.size() < 5) {
+        std::cout << "Penggunaan:" << std::endl;
+        std::cout << "  vlan access <switch_name> <port> <vlan_id>" << std::endl;
+        std::cout << "  vlan trunk <switch_name> <port> [native_vlan]" << std::endl;
+        return;
+    }
+
+    std::string mode = args[1];
+    std::transform(mode.begin(), mode.end(), mode.begin(), ::tolower);
+    auto node = findNode(args[2]);
+    if (!node) {
+        std::cout << "Error: Node '" << args[2] << "' tidak ditemukan." << std::endl;
+        return;
+    }
+
+    auto sw = std::dynamic_pointer_cast<Switch>(node);
+    if (!sw) {
+        std::cout << "Error: Node '" << args[2] << "' bukan switch." << std::endl;
+        return;
+    }
+
+    int port = std::stoi(args[3]);
+    if (!sw->getInterface(static_cast<uint32_t>(port))) {
+        std::cout << "Error: Port " << port << " tidak ditemukan pada switch '" << args[2] << "'." << std::endl;
+        return;
+    }
+
+    if (mode == "access") {
+        int vlanId = std::stoi(args[4]);
+        sw->setAccessVlan(port, vlanId);
+        std::cout << "Switch '" << args[2] << "' port " << port << " -> access VLAN " << vlanId << std::endl;
+        return;
+    }
+
+    if (mode == "trunk") {
+        int nativeVlan = std::stoi(args[4]);
+        sw->setTrunkVlan(port, nativeVlan);
+        std::cout << "Switch '" << args[2] << "' port " << port << " -> trunk (native VLAN " << nativeVlan << ")" << std::endl;
+        return;
+    }
+
+    std::cout << "Error: Mode VLAN tidak valid. Gunakan access atau trunk." << std::endl;
+}
+
 std::shared_ptr<Node> CLI::findNode(const std::string& name) {
     auto it = nodes.find(name);
     if (it != nodes.end()) {
@@ -495,6 +700,25 @@ void CLI::clearTopology() {
 
 void CLI::cmdHelp() {
     std::cout << "=== MAGI SYSTEM SIMULATOR - COMMAND LIST ===" << std::endl;
+    std::cout << std::endl;
+    std::cout << "Pengujian Jaringan:" << std::endl;
+    std::cout << "  <host> ping <ip>                                 - Mengirim ICMP Echo Request" << std::endl;
+    std::cout << "  <host> traceroute <ip>                           - Melacak rute hop-by-hop" << std::endl;
+    std::cout << "  <host> tcp_connect <ip> <port>     (blum)        - Melakukan TCP Handshake" << std::endl;
+    std::cout << "  <host> http_get <url>              (blum)        - Meminta halaman web statis" << std::endl;
+    std::cout << "  <host> http_server start [file]    (blum)        - Menjalankan web server" << std::endl;
+    std::cout << "  <host> http_server stop            (blum)        - Mematikan web server" << std::endl;
+    std::cout << "  <host> dhcp_discover               (blum)        - Meminta alokasi IP otomatis" << std::endl;
+    std::cout << std::endl;
+    std::cout << "Inspeksi Entitas:" << std::endl;
+    std::cout << "  <router> route                                   - Menampilkan Routing Table internal router." << std::endl;
+    std::cout << "  <switch> mac                                     - Menampilkan MAC Address Table internal switch." << std::endl;
+    std::cout << "  <host|router> arp                                - Menampilkan ARP Cache." << std::endl;
+    std::cout << "  setip <host_name> <ip_address>                   - Set IP address host" << std::endl;
+    std::cout << "  setgw <host_name> <gateway_ip>                   - Set default gateway host" << std::endl;
+    std::cout << "  <host> ping <target_ip>                          - Kirim ping antar-host" << std::endl;
+    std::cout << "  vlan access <switch> <port> <vlan>               - Set port switch sebagai access" << std::endl;
+    std::cout << "  vlan trunk <switch> <port> <native_vlan>         - Set port switch sebagai trunk" << std::endl;
     std::cout << std::endl;
     std::cout << "Manajemen Topologi:" << std::endl;
     std::cout << "  create <name> <host|switch|router> [jumlah_port] - Membuat node baru" << std::endl;
@@ -518,7 +742,7 @@ void CLI::cmdHelp() {
 void CLI::run() {
     std::cout << "╔══════════════════════════════════════════════════════════════╗" << std::endl;
     std::cout << "║        MAGI SYSTEM: OSI Layer Network Simulator              ║" << std::endl;
-    std::cout << "║              NERV Division - Milestone 0                     ║" << std::endl;
+    std::cout << "║              NERV Division - Milestone 1                     ║" << std::endl;
     std::cout << "╚══════════════════════════════════════════════════════════════╝" << std::endl;
     std::cout << std::endl;
     std::cout << "Ketik 'help' untuk melihat daftar perintah." << std::endl;
