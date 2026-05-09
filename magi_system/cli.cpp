@@ -1001,7 +1001,6 @@ void CLI::cmdHelp() {
 void CLI::run() {
     std::cout << "╔══════════════════════════════════════════════════════════════╗" << std::endl;
     std::cout << "║        MAGI SYSTEM: OSI Layer Network Simulator              ║" << std::endl;
-    std::cout << "║              NERV Division - Milestone 2                     ║" << std::endl;
     std::cout << "╚══════════════════════════════════════════════════════════════╝" << std::endl;
     std::cout << std::endl;
     std::cout << "Ketik 'help' untuk melihat daftar perintah." << std::endl;
