@@ -1,6 +1,7 @@
 #include "cli.hpp"
 #include "core/interface.hpp"
 #include "core/link.hpp"
+#include "layer3/ip_utils.hpp"
 #include <iostream>
 #include <sstream>
 #include <fstream>
@@ -57,6 +58,8 @@ void CLI::executeCommand(const std::vector<std::string>& args) {
         cmdLoad(args);
     } else if (cmd == "show") {
         cmdShow(args);
+    } else if (cmd == "route") {
+        cmdRoute(args);
     } else if (cmd == "help" || cmd == "?") {
         cmdHelp();
     } else if (cmd == "exit" || cmd == "quit") {
@@ -82,6 +85,18 @@ void CLI::executeCommand(const std::vector<std::string>& args) {
                 cmdPing({"ping", entityName, extraArgs[0]});
                 return true;
             }
+            if (subcmd == "traceroute" && !extraArgs.empty()) {
+                cmdTraceroute({"traceroute", entityName, extraArgs[0]});
+                return true;
+            }
+            if (subcmd == "route") {
+                std::vector<std::string> routeArgs;
+                routeArgs.push_back("route");
+                routeArgs.push_back(entityName);
+                routeArgs.insert(routeArgs.end(), extraArgs.begin(), extraArgs.end());
+                cmdRoute(routeArgs);
+                return true;
+            }
 
             return false;
         };
@@ -98,7 +113,7 @@ void CLI::executeCommand(const std::vector<std::string>& args) {
         }
 
         // Format 2 (alias): <subcommand> <entity> [args]
-        if ((cmd == "mac" || cmd == "arp" || cmd == "ping") && args.size() >= 2) {
+        if ((cmd == "mac" || cmd == "arp" || cmd == "ping" || cmd == "traceroute") && args.size() >= 2) {
             std::vector<std::string> extraArgs;
             if (args.size() > 2) {
                 extraArgs.assign(args.begin() + 2, args.end());
@@ -131,9 +146,28 @@ void CLI::cmdPing(const std::vector<std::string>& args) {
         return;
     }
 
-    std::string payload = "PING|" + host->getIpAddress() + "|" + args[2];
-    host->sendLayer3Packet(args[2], std::vector<uint8_t>(payload.begin(), payload.end()));
-    std::cout << "[" << args[1] << "] kirim PING ke " << args[2] << std::endl;
+    host->sendPing(args[2]);
+}
+
+void CLI::cmdTraceroute(const std::vector<std::string>& args) {
+    if (args.size() < 3) {
+        std::cout << "Penggunaan: traceroute <host_name> <target_ip> atau <host_name> traceroute <target_ip>" << std::endl;
+        return;
+    }
+
+    auto node = findNode(args[1]);
+    if (!node) {
+        std::cout << "Error: Node '" << args[1] << "' tidak ditemukan." << std::endl;
+        return;
+    }
+
+    auto host = std::dynamic_pointer_cast<Host>(node);
+    if (!host) {
+        std::cout << "Error: Node '" << args[1] << "' bukan host." << std::endl;
+        return;
+    }
+
+    host->traceroute(args[2]);
 }
 
 void CLI::cmdCreate(const std::vector<std::string>& args) {
@@ -169,8 +203,12 @@ void CLI::cmdCreate(const std::vector<std::string>& args) {
         node = std::make_shared<Switch>(name, numPorts);
         std::cout << "Switch '" << name << "' dengan " << numPorts << " port berhasil dibuat." << std::endl;
     } else if (type == "router") {
-        node = std::make_shared<Router>(name);
-        std::cout << "Router '" << name << "' berhasil dibuat." << std::endl;
+        uint32_t numPorts = 4;
+        if (args.size() >= 4) {
+            numPorts = std::stoul(args[3]);
+        }
+        node = std::make_shared<Router>(name, numPorts);
+        std::cout << "Router '" << name << "' dengan " << numPorts << " port berhasil dibuat." << std::endl;
     } else {
         std::cout << "Error: Tipe node tidak valid. Gunakan: host, switch, atau router." << std::endl;
         return;
@@ -189,6 +227,44 @@ bool CLI::parseEndpoint(const std::string& endpoint, std::string& nodeName, uint
         port = 1;
     }
     return true;
+}
+
+bool CLI::parsePortVlanSpec(const std::string& spec, uint32_t& port, int& vlanId) {
+    port = 0;
+    vlanId = iputil::kUntaggedVlan;
+
+    if (spec.empty()) {
+        return false;
+    }
+
+    size_t dotPos = spec.find('.');
+    std::string portPart = spec;
+    std::string vlanPart = "";
+    if (dotPos != std::string::npos) {
+        portPart = spec.substr(0, dotPos);
+        vlanPart = spec.substr(dotPos + 1);
+    }
+
+    try {
+        port = static_cast<uint32_t>(std::stoul(portPart));
+        if (!vlanPart.empty()) {
+            vlanId = std::stoi(vlanPart);
+        }
+    } catch (...) {
+        return false;
+    }
+
+    return port > 0;
+}
+
+bool CLI::parseRouterInterfaceSpec(const std::string& spec, std::string& nodeName, uint32_t& port, int& vlanId) {
+    size_t colonPos = spec.find(':');
+    if (colonPos == std::string::npos) {
+        return false;
+    }
+
+    nodeName = spec.substr(0, colonPos);
+    return parsePortVlanSpec(spec.substr(colonPos + 1), port, vlanId);
 }
 
 void CLI::cmdLink(const std::vector<std::string>& args) {
@@ -473,15 +549,65 @@ bool CLI::parseJsonFile(const std::string& filename) {
                 }
             } else if (currentSection == "routers") {
                 std::string name = "";
-                
-                while (std::getline(file, line) && line.find("}") == std::string::npos) {
+                uint32_t numPorts = 4;
+                std::vector<std::pair<std::string, std::string> > interfaceConfigs;
+                struct RouteConfig {
+                    std::string destination;
+                    std::string nextHop;
+                    std::string outInterface;
+                };
+                std::vector<RouteConfig> routeConfigs;
+
+                int braceDepth = 1;
+                while (braceDepth > 0 && std::getline(file, line)) {
+                    line = trim(line);
+
                     if (line.find("\"name\"") != std::string::npos) {
                         name = extractJsonValue(line, "name");
+                    } else if (line.find("\"num_ports\"") != std::string::npos) {
+                        std::string portsStr = extractJsonValue(line, "num_ports");
+                        if (!portsStr.empty()) numPorts = std::stoul(portsStr);
+                    } else if (line.find("\"endpoint\"") != std::string::npos) {
+                        std::string endpoint = extractJsonValue(line, "endpoint");
+                        std::string ipAddress = extractJsonValue(line, "ip_address");
+                        if (!endpoint.empty() && !ipAddress.empty()) {
+                            interfaceConfigs.push_back(std::make_pair(endpoint, ipAddress));
+                        }
+                    } else if (line.find("\"destination\"") != std::string::npos) {
+                        RouteConfig routeConfig;
+                        routeConfig.destination = extractJsonValue(line, "destination");
+                        routeConfig.nextHop = extractJsonValue(line, "next_hop");
+                        routeConfig.outInterface = extractJsonValue(line, "out_interface");
+                        if (!routeConfig.destination.empty() &&
+                            !routeConfig.nextHop.empty() &&
+                            !routeConfig.outInterface.empty()) {
+                            routeConfigs.push_back(routeConfig);
+                        }
                     }
+
+                    braceDepth += static_cast<int>(std::count(line.begin(), line.end(), '{'));
+                    braceDepth -= static_cast<int>(std::count(line.begin(), line.end(), '}'));
                 }
-                
+
                 if (!name.empty()) {
-                    auto router = std::make_shared<Router>(name);
+                    auto router = std::make_shared<Router>(name, numPorts);
+                    for (size_t i = 0; i < interfaceConfigs.size(); ++i) {
+                        uint32_t port = 0;
+                        int vlanId = iputil::kUntaggedVlan;
+                        if (parsePortVlanSpec(interfaceConfigs[i].first, port, vlanId)) {
+                            router->configureInterface(port, vlanId, interfaceConfigs[i].second);
+                        }
+                    }
+                    for (size_t i = 0; i < routeConfigs.size(); ++i) {
+                        uint32_t outPort = 0;
+                        int outVlanId = iputil::kUntaggedVlan;
+                        if (parsePortVlanSpec(routeConfigs[i].outInterface, outPort, outVlanId)) {
+                            router->addRoute(routeConfigs[i].destination,
+                                             routeConfigs[i].nextHop,
+                                             outPort,
+                                             outVlanId);
+                        }
+                    }
                     nodes[name] = router;
                 }
             } else if (currentSection == "links") {
@@ -577,7 +703,7 @@ void CLI::cmdMac(const std::vector<std::string>& args) {
 
 void CLI::cmdArp(const std::vector<std::string>& args) {
     if (args.size() < 2) {
-        std::cout << "Penggunaan: arp <host_name> atau <host_name> arp" << std::endl;
+        std::cout << "Penggunaan: arp <host_name|router_name> atau <node> arp" << std::endl;
         return;
     }
 
@@ -588,17 +714,140 @@ void CLI::cmdArp(const std::vector<std::string>& args) {
     }
 
     auto host = std::dynamic_pointer_cast<Host>(node);
-    if (!host) {
-        std::cout << "Error: Node '" << args[1] << "' bukan host." << std::endl;
+    if (host) {
+        host->printArpCache();
         return;
     }
 
-    host->printArpCache();
+    auto router = std::dynamic_pointer_cast<Router>(node);
+    if (router) {
+        router->printArpCache();
+        return;
+    }
+
+    std::cout << "Error: Node '" << args[1] << "' tidak mendukung ARP cache." << std::endl;
+}
+
+void CLI::cmdRoute(const std::vector<std::string>& args) {
+    std::string routerName;
+    std::string action;
+    std::string destinationCidr;
+    std::string nextHopIp;
+    std::string outInterfaceSpec;
+
+    if (args.size() >= 2 && args[1] == "add") {
+        if (args.size() < 6) {
+            std::cout << "Penggunaan: route add <router_name> <dest_cidr> <next_hop_ip> <out_interface>" << std::endl;
+            return;
+        }
+        routerName = args[2];
+        action = "add";
+        destinationCidr = args[3];
+        nextHopIp = args[4];
+        outInterfaceSpec = args[5];
+    } else {
+        if (args.size() < 2) {
+            std::cout << "Penggunaan: route <router_name> atau <router> route add <dest_cidr> <next_hop_ip> <out_interface>" << std::endl;
+            return;
+        }
+        routerName = args[1];
+        if (args.size() >= 3) {
+            action = args[2];
+        }
+        if (args.size() >= 6) {
+            destinationCidr = args[3];
+            nextHopIp = args[4];
+            outInterfaceSpec = args[5];
+        }
+    }
+
+    auto node = findNode(routerName);
+    if (!node) {
+        std::cout << "Error: Node '" << routerName << "' tidak ditemukan." << std::endl;
+        return;
+    }
+
+    auto router = std::dynamic_pointer_cast<Router>(node);
+    if (!router) {
+        std::cout << "Error: Node '" << routerName << "' bukan router." << std::endl;
+        return;
+    }
+
+    if (action.empty()) {
+        router->printRoutingTable();
+        return;
+    }
+
+    std::transform(action.begin(), action.end(), action.begin(), ::tolower);
+    if (action != "add") {
+        std::cout << "Error: Aksi route tidak valid. Gunakan 'add'." << std::endl;
+        return;
+    }
+
+    uint32_t outPort = 0;
+    int outVlanId = iputil::kUntaggedVlan;
+    if (!parsePortVlanSpec(outInterfaceSpec, outPort, outVlanId)) {
+        std::cout << "Error: Format out_interface tidak valid. Gunakan <port> atau <port.vlan>." << std::endl;
+        return;
+    }
+
+    if (!iputil::isValidCidr(destinationCidr)) {
+        std::cout << "Error: Destination CIDR tidak valid." << std::endl;
+        return;
+    }
+    if (!iputil::isValidIp(nextHopIp)) {
+        std::cout << "Error: Next-hop IP tidak valid." << std::endl;
+        return;
+    }
+
+    if (!router->addRoute(destinationCidr, nextHopIp, outPort, outVlanId)) {
+        std::cout << "Error: Gagal menambah route. Pastikan interface router sudah dikonfigurasi." << std::endl;
+        return;
+    }
+
+    std::cout << "Route pada router '" << routerName << "' ditambahkan: "
+              << destinationCidr << " via " << nextHopIp
+              << " dev " << outInterfaceSpec << std::endl;
 }
 
 void CLI::cmdSetIp(const std::vector<std::string>& args) {
     if (args.size() < 3) {
-        std::cout << "Penggunaan: setip <host_name> <ip_address>" << std::endl;
+        std::cout << "Penggunaan: setip <host_name|router:port[.vlan]> <ip_address/cidr>" << std::endl;
+        return;
+    }
+
+    if (!iputil::isValidCidr(args[2])) {
+        std::cout << "Error: IP address/CIDR tidak valid." << std::endl;
+        return;
+    }
+
+    std::string routerName;
+    uint32_t port = 0;
+    int vlanId = iputil::kUntaggedVlan;
+    if (parseRouterInterfaceSpec(args[1], routerName, port, vlanId)) {
+        auto node = findNode(routerName);
+        if (!node) {
+            std::cout << "Error: Router '" << routerName << "' tidak ditemukan." << std::endl;
+            return;
+        }
+
+        auto router = std::dynamic_pointer_cast<Router>(node);
+        if (!router) {
+            std::cout << "Error: Node '" << routerName << "' bukan router." << std::endl;
+            return;
+        }
+
+        if (!router->getInterface(port)) {
+            std::cout << "Error: Port " << port << " tidak ditemukan pada router '" << routerName << "'." << std::endl;
+            return;
+        }
+
+        router->configureInterface(port, vlanId, args[2]);
+        std::cout << "IP router '" << routerName << "' interface " << port;
+        if (vlanId != iputil::kUntaggedVlan) {
+            std::cout << "." << vlanId;
+        }
+        std::cout << " di-set ke " << args[2] << std::endl;
         return;
     }
 
@@ -610,7 +859,7 @@ void CLI::cmdSetIp(const std::vector<std::string>& args) {
 
     auto host = std::dynamic_pointer_cast<Host>(node);
     if (!host) {
-        std::cout << "Error: Node '" << args[1] << "' bukan host." << std::endl;
+        std::cout << "Error: Gunakan format router:port[.vlan] untuk interface router." << std::endl;
         return;
     }
 
@@ -641,7 +890,7 @@ void CLI::cmdSetGateway(const std::vector<std::string>& args) {
 }
 
 void CLI::cmdVlan(const std::vector<std::string>& args) {
-    if (args.size() < 5) {
+    if (args.size() < 4) {
         std::cout << "Penggunaan:" << std::endl;
         std::cout << "  vlan access <switch_name> <port> <vlan_id>" << std::endl;
         std::cout << "  vlan trunk <switch_name> <port> [native_vlan]" << std::endl;
@@ -669,6 +918,10 @@ void CLI::cmdVlan(const std::vector<std::string>& args) {
     }
 
     if (mode == "access") {
+        if (args.size() < 5) {
+            std::cout << "Penggunaan: vlan access <switch_name> <port> <vlan_id>" << std::endl;
+            return;
+        }
         int vlanId = std::stoi(args[4]);
         sw->setAccessVlan(port, vlanId);
         std::cout << "Switch '" << args[2] << "' port " << port << " -> access VLAN " << vlanId << std::endl;
@@ -676,7 +929,10 @@ void CLI::cmdVlan(const std::vector<std::string>& args) {
     }
 
     if (mode == "trunk") {
-        int nativeVlan = std::stoi(args[4]);
+        int nativeVlan = 1;
+        if (args.size() >= 5) {
+            nativeVlan = std::stoi(args[4]);
+        }
         sw->setTrunkVlan(port, nativeVlan);
         std::cout << "Switch '" << args[2] << "' port " << port << " -> trunk (native VLAN " << nativeVlan << ")" << std::endl;
         return;
@@ -712,11 +968,14 @@ void CLI::cmdHelp() {
     std::cout << std::endl;
     std::cout << "Inspeksi Entitas:" << std::endl;
     std::cout << "  <router> route                                   - Menampilkan Routing Table internal router." << std::endl;
+    std::cout << "  <router> route add <cidr> <next_hop> <port[.vlan]> - Menambahkan static route" << std::endl;
     std::cout << "  <switch> mac                                     - Menampilkan MAC Address Table internal switch." << std::endl;
     std::cout << "  <host|router> arp                                - Menampilkan ARP Cache." << std::endl;
-    std::cout << "  setip <host_name> <ip_address>                   - Set IP address host" << std::endl;
+    std::cout << "  setip <host_name> <ip/cidr>                      - Set IP address host" << std::endl;
+    std::cout << "  setip <router:port[.vlan]> <ip/cidr>             - Set IP interface router/sub-interface" << std::endl;
     std::cout << "  setgw <host_name> <gateway_ip>                   - Set default gateway host" << std::endl;
     std::cout << "  <host> ping <target_ip>                          - Kirim ping antar-host" << std::endl;
+    std::cout << "  <host> traceroute <target_ip>                    - Lacak hop router menuju target" << std::endl;
     std::cout << "  vlan access <switch> <port> <vlan>               - Set port switch sebagai access" << std::endl;
     std::cout << "  vlan trunk <switch> <port> <native_vlan>         - Set port switch sebagai trunk" << std::endl;
     std::cout << std::endl;
@@ -742,7 +1001,7 @@ void CLI::cmdHelp() {
 void CLI::run() {
     std::cout << "╔══════════════════════════════════════════════════════════════╗" << std::endl;
     std::cout << "║        MAGI SYSTEM: OSI Layer Network Simulator              ║" << std::endl;
-    std::cout << "║              NERV Division - Milestone 1                     ║" << std::endl;
+    std::cout << "║              NERV Division - Milestone 2                     ║" << std::endl;
     std::cout << "╚══════════════════════════════════════════════════════════════╝" << std::endl;
     std::cout << std::endl;
     std::cout << "Ketik 'help' untuk melihat daftar perintah." << std::endl;
