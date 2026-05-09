@@ -44,10 +44,14 @@ private:
     void cmdSetGateway(const std::vector<std::string>& args);
     void cmdVlan(const std::vector<std::string>& args);
     void cmdPing(const std::vector<std::string>& args);
+    void cmdTraceroute(const std::vector<std::string>& args);
+    void cmdRoute(const std::vector<std::string>& args);
     void cmdHelp();
     
     std::shared_ptr<Node> findNode(const std::string& name);
     bool parseEndpoint(const std::string& endpoint, std::string& nodeName, uint32_t& port);
+    bool parseRouterInterfaceSpec(const std::string& spec, std::string& nodeName, uint32_t& port, int& vlanId);
+    bool parsePortVlanSpec(const std::string& spec, uint32_t& port, int& vlanId);
     void clearTopology();
     
     bool parseJsonFile(const std::string& filename);

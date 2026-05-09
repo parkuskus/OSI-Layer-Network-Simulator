@@ -22,7 +22,9 @@ SOURCES := \
     layer2/ethernet.cpp \
     layer2/arp.cpp \
     layer2/host.cpp \
-    layer2/switch.cpp
+    layer2/switch.cpp \
+    layer3/ipv4.cpp \
+    layer3/icmp.cpp
 
 # Build artifacts
 OBJECTS := $(patsubst %.cpp,$(BUILD_DIR)/%.o,$(SOURCES))
