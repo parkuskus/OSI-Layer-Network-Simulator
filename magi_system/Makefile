@@ -24,7 +24,10 @@ SOURCES := \
     layer2/host.cpp \
     layer2/switch.cpp \
     layer3/ipv4.cpp \
-    layer3/icmp.cpp
+    layer3/icmp.cpp \
+    layer4/tcp.cpp \
+    layer4/udp.cpp \
+    layer4/tcp_socket.cpp
 
 # Build artifacts
 OBJECTS := $(patsubst %.cpp,$(BUILD_DIR)/%.o,$(SOURCES))

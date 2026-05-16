@@ -2,11 +2,14 @@
 #include "core/interface.hpp"
 #include "core/link.hpp"
 #include "layer3/ip_utils.hpp"
+#include "layer4/udp.hpp"
+#include "layer4/tcp_socket.hpp"
 #include <iostream>
 #include <sstream>
 #include <fstream>
 #include <algorithm>
 #include <cctype>
+#include <iomanip>
 
 namespace magi {
 
@@ -98,6 +101,35 @@ void CLI::executeCommand(const std::vector<std::string>& args) {
                 return true;
             }
 
+            if (subcmd == "tcp_connect" && extraArgs.size() >= 2) {
+                std::vector<std::string> tcpArgs = {"tcp_connect", entityName, extraArgs[0], extraArgs[1]};
+                cmdTcpConnect(tcpArgs);
+                return true;
+            }
+            if (subcmd == "udp_send" && extraArgs.size() >= 3) {
+                std::vector<std::string> udpArgs = {"udp_send", entityName, extraArgs[0], extraArgs[1], extraArgs[2]};
+                if (extraArgs.size() > 3) {
+                    udpArgs.insert(udpArgs.end(), extraArgs.begin() + 3, extraArgs.end());
+                }
+                cmdUdpSend(udpArgs);
+                return true;
+            }
+            if (subcmd == "http_get" && !extraArgs.empty()) {
+                std::vector<std::string> httpArgs = {"http_get", entityName, extraArgs[0]};
+                cmdHttpGet(httpArgs);
+                return true;
+            }
+            if (subcmd == "http_server" && !extraArgs.empty()) {
+                std::vector<std::string> httpServerArgs = {"http_server", entityName};
+                httpServerArgs.insert(httpServerArgs.end(), extraArgs.begin(), extraArgs.end());
+                cmdHttpServer(httpServerArgs);
+                return true;
+            }
+            if (subcmd == "dhcp_discover") {
+                std::vector<std::string> dhcpArgs = {"dhcp_discover", entityName};
+                cmdDhcpDiscover(dhcpArgs);
+                return true;
+            }
             return false;
         };
 
@@ -113,7 +145,9 @@ void CLI::executeCommand(const std::vector<std::string>& args) {
         }
 
         // Format 2 (alias): <subcommand> <entity> [args]
-        if ((cmd == "mac" || cmd == "arp" || cmd == "ping" || cmd == "traceroute") && args.size() >= 2) {
+        if ((cmd == "mac" || cmd == "arp" || cmd == "ping" || cmd == "traceroute" ||
+             cmd == "tcp_connect" || cmd == "udp_send" || cmd == "http_get" || cmd == "http_server" ||
+             cmd == "dhcp_discover") && args.size() >= 2) {
             std::vector<std::string> extraArgs;
             if (args.size() > 2) {
                 extraArgs.assign(args.begin() + 2, args.end());
@@ -168,6 +202,263 @@ void CLI::cmdTraceroute(const std::vector<std::string>& args) {
     }
 
     host->traceroute(args[2]);
+}
+
+void CLI::cmdTcpConnect(const std::vector<std::string>& args) {
+    if (args.size() < 4) {
+        std::cout << "Penggunaan: <host_name> tcp_connect <target_ip> <port>" << std::endl;
+        return;
+    }
+
+    auto sourceNode = findNode(args[1]);
+    if (!sourceNode) {
+        std::cout << "Error: Node '" << args[1] << "' tidak ditemukan." << std::endl;
+        return;
+    }
+
+    auto sourceHost = std::dynamic_pointer_cast<Host>(sourceNode);
+    if (!sourceHost) {
+        std::cout << "Error: Node '" << args[1] << "' bukan host." << std::endl;
+        return;
+    }
+
+    const std::string targetIp = args[2];
+    if (!iputil::isValidIp(targetIp)) {
+        std::cout << "Error: Target IP tidak valid." << std::endl;
+        return;
+    }
+
+    uint16_t targetPort = 0;
+    try {
+        const unsigned long parsedPort = std::stoul(args[3]);
+        if (parsedPort == 0 || parsedPort > 65535) {
+            std::cout << "Error: Port harus di rentang 1-65535." << std::endl;
+            return;
+        }
+        targetPort = static_cast<uint16_t>(parsedPort);
+    } catch (...) {
+        std::cout << "Error: Port tidak valid." << std::endl;
+        return;
+    }
+
+    std::shared_ptr<Host> targetHost;
+    for (std::map<std::string, std::shared_ptr<Node>>::const_iterator it = nodes.begin(); it != nodes.end(); ++it) {
+        std::shared_ptr<Host> candidate = std::dynamic_pointer_cast<Host>(it->second);
+        if (!candidate) {
+            continue;
+        }
+
+        if (iputil::stripCidr(candidate->getIpAddress()) == targetIp) {
+            targetHost = candidate;
+            break;
+        }
+    }
+
+    if (!targetHost) {
+        std::cout << "Error: Tidak ada host dengan IP " << targetIp << " di topologi." << std::endl;
+        return;
+    }
+
+    const std::string sourceIp = iputil::stripCidr(sourceHost->getIpAddress());
+    if (!iputil::isValidIp(sourceIp)) {
+        std::cout << "Error: IP host sumber belum valid/terkonfigurasi." << std::endl;
+        return;
+    }
+
+    const uint16_t ephemeralPort = 49152;
+    TCPSocket client(sourceIp, ephemeralPort, targetIp, targetPort);
+    TCPSocket server(targetIp, targetPort, sourceIp, ephemeralPort);
+    server.setState(TCPState::LISTEN);
+
+    std::cout << "[TCP] " << args[1] << " tcp_connect " << targetIp << ":" << targetPort << std::endl;
+
+    std::shared_ptr<TCPSegment> syn = client.initiateConnection();
+    if (!syn) {
+        std::cout << "[TCP] Gagal mengirim SYN." << std::endl;
+        return;
+    }
+
+    std::shared_ptr<TCPSegment> synAck = server.handleIncomingSegment(*syn);
+    if (!synAck) {
+        std::cout << "[TCP] Gagal menerima SYN-ACK dari server." << std::endl;
+        return;
+    }
+
+    std::shared_ptr<TCPSegment> ack = client.handleIncomingSegment(*synAck);
+    if (!ack) {
+        std::cout << "[TCP] Gagal menghasilkan ACK terakhir." << std::endl;
+        return;
+    }
+
+    server.handleIncomingSegment(*ack);
+
+    if (client.isConnected() && server.isConnected()) {
+        std::cout << "[TCP] 3-Way Handshake sukses (SYN -> SYN-ACK -> ACK)." << std::endl;
+    } else {
+        std::cout << "[TCP] Handshake selesai tapi state belum ESTABLISHED di kedua sisi." << std::endl;
+    }
+}
+
+void CLI::cmdUdpSend(const std::vector<std::string>& args) {
+    if (args.size() < 5) {
+        std::cout << "Penggunaan: <host_name> udp_send <target_ip> <source_port> <destination_port> [payload]" << std::endl;
+        return;
+    }
+
+    auto sourceNode = findNode(args[1]);
+    if (!sourceNode) {
+        std::cout << "Error: Node '" << args[1] << "' tidak ditemukan." << std::endl;
+        return;
+    }
+
+    auto sourceHost = std::dynamic_pointer_cast<Host>(sourceNode);
+    if (!sourceHost) {
+        std::cout << "Error: Node '" << args[1] << "' bukan host." << std::endl;
+        return;
+    }
+
+    const std::string sourceIp = iputil::stripCidr(sourceHost->getIpAddress());
+    if (!iputil::isValidIp(sourceIp)) {
+        std::cout << "Error: IP host sumber belum valid/terkonfigurasi." << std::endl;
+        return;
+    }
+
+    const std::string targetIp = args[2];
+    if (!iputil::isValidIp(targetIp)) {
+        std::cout << "Error: Target IP tidak valid." << std::endl;
+        return;
+    }
+
+    uint16_t sourcePort = 0;
+    uint16_t destinationPort = 0;
+    try {
+        const unsigned long parsedSourcePort = std::stoul(args[3]);
+        const unsigned long parsedDestinationPort = std::stoul(args[4]);
+        if (parsedSourcePort == 0 || parsedSourcePort > 65535 ||
+            parsedDestinationPort == 0 || parsedDestinationPort > 65535) {
+            std::cout << "Error: Port harus di rentang 1-65535." << std::endl;
+            return;
+        }
+        sourcePort = static_cast<uint16_t>(parsedSourcePort);
+        destinationPort = static_cast<uint16_t>(parsedDestinationPort);
+    } catch (...) {
+        std::cout << "Error: Port tidak valid." << std::endl;
+        return;
+    }
+
+    std::ostringstream payloadStream;
+    for (size_t i = 5; i < args.size(); ++i) {
+        if (i > 5) {
+            payloadStream << ' ';
+        }
+        payloadStream << args[i];
+    }
+    const std::string payloadText = payloadStream.str().empty() ? "MAGI_UDP_TEST" : payloadStream.str();
+
+    UDPSegment segment;
+    segment.sourcePort = sourcePort;
+    segment.destinationPort = destinationPort;
+    segment.payload.assign(payloadText.begin(), payloadText.end());
+    segment.updateChecksum(sourceIp, targetIp);
+
+    std::shared_ptr<Host> targetHost;
+    for (std::map<std::string, std::shared_ptr<Node>>::const_iterator it = nodes.begin(); it != nodes.end(); ++it) {
+        std::shared_ptr<Host> candidate = std::dynamic_pointer_cast<Host>(it->second);
+        if (candidate && iputil::stripCidr(candidate->getIpAddress()) == targetIp) {
+            targetHost = candidate;
+            break;
+        }
+    }
+
+    std::cout << "[UDP] " << args[1] << " udp_send " << targetIp << ":" << destinationPort << std::endl;
+    std::cout << "[UDP] from " << sourceIp << ":" << sourcePort << std::endl;
+    std::cout << "[UDP] payload: " << payloadText << std::endl;
+    std::cout << "[UDP] payload size: " << segment.getPayloadSize() << " bytes" << std::endl;
+    std::cout << "[UDP] checksum: 0x" << std::hex << std::setw(4) << std::setfill('0')
+              << segment.checksum << std::dec << std::setfill(' ') << std::endl;
+
+    if (targetHost) {
+        std::cout << "[UDP] target host ditemukan di topologi: " << targetHost->getName() << std::endl;
+    } else {
+        std::cout << "[UDP] target host belum ditemukan di topologi; ini uji pembentukan UDP segment." << std::endl;
+    }
+}
+
+void CLI::cmdHttpGet(const std::vector<std::string>& args) {
+    if (args.size() < 3) {
+        std::cout << "Penggunaan: <host_name> http_get <url>" << std::endl;
+        return;
+    }
+
+    auto sourceNode = findNode(args[1]);
+    if (!sourceNode) {
+        std::cout << "Error: Node '" << args[1] << "' tidak ditemukan." << std::endl;
+        return;
+    }
+
+    auto sourceHost = std::dynamic_pointer_cast<Host>(sourceNode);
+    if (!sourceHost) {
+        std::cout << "Error: Node '" << args[1] << "' bukan host." << std::endl;
+        return;
+    }
+
+    std::cout << "[HTTP] http_get untuk '" << args[2] << "' belum diimplementasikan penuh." << std::endl;
+}
+
+void CLI::cmdHttpServer(const std::vector<std::string>& args) {
+    if (args.size() < 3) {
+        std::cout << "Penggunaan: <host_name> http_server <start|stop> [file]" << std::endl;
+        return;
+    }
+
+    auto sourceNode = findNode(args[1]);
+    if (!sourceNode) {
+        std::cout << "Error: Node '" << args[1] << "' tidak ditemukan." << std::endl;
+        return;
+    }
+
+    auto sourceHost = std::dynamic_pointer_cast<Host>(sourceNode);
+    if (!sourceHost) {
+        std::cout << "Error: Node '" << args[1] << "' bukan host." << std::endl;
+        return;
+    }
+
+    std::string action = args[2];
+    std::transform(action.begin(), action.end(), action.begin(), ::tolower);
+
+    if (action == "start") {
+        const std::string file = (args.size() >= 4) ? args[3] : "index.html";
+        std::cout << "[HTTP] http_server start (file: " << file << ") belum diimplementasikan penuh." << std::endl;
+        return;
+    }
+
+    if (action == "stop") {
+        std::cout << "[HTTP] http_server stop belum diimplementasikan penuh." << std::endl;
+        return;
+    }
+
+    std::cout << "Error: Gunakan 'start' atau 'stop'." << std::endl;
+}
+
+void CLI::cmdDhcpDiscover(const std::vector<std::string>& args) {
+    if (args.size() < 2) {
+        std::cout << "Penggunaan: <host_name> dhcp_discover" << std::endl;
+        return;
+    }
+
+    auto sourceNode = findNode(args[1]);
+    if (!sourceNode) {
+        std::cout << "Error: Node '" << args[1] << "' tidak ditemukan." << std::endl;
+        return;
+    }
+
+    auto sourceHost = std::dynamic_pointer_cast<Host>(sourceNode);
+    if (!sourceHost) {
+        std::cout << "Error: Node '" << args[1] << "' bukan host." << std::endl;
+        return;
+    }
+
+    std::cout << "[DHCP] dhcp_discover belum diimplementasikan penuh." << std::endl;
 }
 
 void CLI::cmdCreate(const std::vector<std::string>& args) {
@@ -960,7 +1251,8 @@ void CLI::cmdHelp() {
     std::cout << "Pengujian Jaringan:" << std::endl;
     std::cout << "  <host> ping <ip>                                 - Mengirim ICMP Echo Request" << std::endl;
     std::cout << "  <host> traceroute <ip>                           - Melacak rute hop-by-hop" << std::endl;
-    std::cout << "  <host> tcp_connect <ip> <port>     (blum)        - Melakukan TCP Handshake" << std::endl;
+    std::cout << "  <host> tcp_connect <ip> <port>                   - Melakukan TCP Handshake" << std::endl;
+    std::cout << "  <host> udp_send <ip> <src_port> <dst_port>       - Membuat dan uji UDP segment" << std::endl;
     std::cout << "  <host> http_get <url>              (blum)        - Meminta halaman web statis" << std::endl;
     std::cout << "  <host> http_server start [file]    (blum)        - Menjalankan web server" << std::endl;
     std::cout << "  <host> http_server stop            (blum)        - Mematikan web server" << std::endl;
