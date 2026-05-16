@@ -23,8 +23,8 @@ struct LinkConnection {
 
 class CLI {
 private:
-    std::map<std::string, std::shared_ptr<Node>> nodes;  // nama node -> Node
-    std::vector<LinkConnection> connections;             // daftar koneksi
+    std::map<std::string, std::shared_ptr<Node>> nodes;
+    std::vector<LinkConnection> connections;
     bool running;
     
     std::vector<std::string> parseCommand(const std::string& input);
@@ -46,6 +46,12 @@ private:
     void cmdPing(const std::vector<std::string>& args);
     void cmdTraceroute(const std::vector<std::string>& args);
     void cmdRoute(const std::vector<std::string>& args);
+
+    void cmdTcpConnect(const std::vector<std::string>& args);
+    void cmdUdpSend(const std::vector<std::string>& args);
+    void cmdHttpGet(const std::vector<std::string>& args);
+    void cmdHttpServer(const std::vector<std::string>& args);
+    void cmdDhcpDiscover(const std::vector<std::string>& args);
     void cmdHelp();
     
     std::shared_ptr<Node> findNode(const std::string& name);

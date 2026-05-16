@@ -66,58 +66,62 @@ magi_system/
 ├── main.cpp
 ├── cli.cpp
 ├── cli.hpp
+├── topology.json
 ├── core/
 │   ├── packet.cpp / packet.hpp
 │   ├── interface.cpp / interface.hpp
 │   ├── link.cpp / link.hpp
 │   └── node.cpp / node.hpp
-└── layer2/
-    ├── ethernet.cpp / ethernet.hpp
-    ├── arp.cpp / arp.hpp
-    ├── host.cpp / host.hpp
-    └── switch.cpp / switch.hpp
+├── layer2/
+│   ├── ethernet.cpp / ethernet.hpp
+│   ├── arp.cpp / arp.hpp
+│   ├── host.cpp / host.hpp
+│   └── switch.cpp / switch.hpp
+├── layer3/
+│   ├── ipv4.cpp / ipv4.hpp
+│   ├── icmp.cpp / icmp.hpp
+│   └── ip_utils.hpp
+├── layer4/
+│   ├── tcp.cpp / tcp.hpp
+│   ├── tcp_socket.cpp / tcp_socket.hpp
+│   └── udp.cpp / udp.hpp
+└── build/
+    └── ... generated object files and dependency files
 ```
 
-Direktori `layer3/`, `layer4/`, `layer7/`, dan `middleboxes/` disiapkan untuk milestone berikutnya.
-
-## Fitur Saat Ini
-
-* Create node: `host`, `switch`, `router`
-* Link dan unlink antar-port
-* Tampilkan topologi dan detail node
-* Set IP address dan default gateway host
-* Konfigurasi VLAN access/trunk pada switch
-* Lihat MAC table switch dan ARP cache host
-* Ping sederhana antar host
-* Simpan dan muat topologi dalam JSON
-
-## Perintah CLI
+## Fitur yang Tersedia
 
 ### Manajemen Topologi
 
-* `create <name> <host|switch|router> [jumlah_port]` - Membuat node baru
-* `link <device1> <device2> [delay_ms]` - Menghubungkan dua node atau port
-* `unlink <device1> <device2>` - Memutuskan koneksi
-* `topology` - Menampilkan seluruh topologi
-* `show <node_name>` - Menampilkan detail node
+- `create <name> <host|switch|router> [jumlah_port]`
+- `link <device1> <device2> [delay_ms]`
+- `unlink <device1> <device2>`
+- `topology`
+- `show <node_name>`
 
 ### Konfigurasi Node
 
-* `setip <host_name> <ip_address>` - Set IP host
-* `setgw <host_name> <gateway_ip>` - Set default gateway host
-* `vlan access <switch_name> <port> <vlan_id>` - Set port switch sebagai access VLAN
-* `vlan trunk <switch_name> <port> [native_vlan]` - Set port switch sebagai trunk
+- `setip <host_name> <ip/cidr>`
+- `setip <router:port[.vlan]> <ip/cidr>`
+- `setgw <host_name> <gateway_ip>`
+- `vlan access <switch_name> <port> <vlan_id>`
+- `vlan trunk <switch_name> <port> <native_vlan>`
+- `route <router_name>`
+- `route add <router_name> <dest_cidr> <next_hop_ip> <out_interface>`
 
-### Monitoring
+### Monitoring dan Pengujian
 
-* `mac <switch_name>` atau `<switch_name> mac` - Tampilkan MAC table switch
-* `arp <host_name>` atau `<host_name> arp` - Tampilkan ARP cache host
-* `ping <host_name> <target_ip>` atau `<host_name> ping <target_ip>` - Kirim ping
+- `mac <switch_name>` atau `<switch_name> mac`
+- `arp <host_name>` atau `<host_name> arp`
+- `ping <host_name> <target_ip>` atau `<host_name> ping <target_ip>`
+- `traceroute <host_name> <target_ip>` atau `<host_name> traceroute <target_ip>`
+- `tcp_connect <host_name> <target_ip> <port>` atau `<host_name> tcp_connect <target_ip> <port>`
+ - `udp_send <host_name> <target_ip> <src_port> <dst_port> [payload]` atau `<host_name> udp_send <target_ip> <src_port> <dst_port> [payload]` — buat dan verifikasi UDP segment (lokal/test)
 
 ### File Operations
 
-* `save [filename]` - Simpan topologi ke JSON, default `topology.json`
-* `load [filename]` - Muat topologi dari JSON
+- `save [filename]` untuk menyimpan topologi ke JSON, default `topology.json`
+- `load [filename]` untuk memuat topologi dari JSON
 
 ### General
 
@@ -260,13 +264,13 @@ Centang sesuai implementasi yang sudah selesai.
 * [X] **Milestone 0: Fondasi Simulasi** - Pembuatan kelas fisik (*Interface*, *Link*), struktur dasar *Packet* yang mendukung konversi ke *byte* mentah, dan memuat topologi JSON.
 * [X] **Milestone 1: Data Link Layer (L2)** - Implementasi *Ethernet Frame*, logika *Switching* (*VLAN-aware*), dan antrean IP Packet menggunakan *ARP Cache*.
 * [X] **Milestone 2: Network Layer (L3)** - Implementasi resolusi *Longest Prefix Match Routing*, *Inter-VLAN Routing*, modifikasi parameter TTL, kalkulasi *Checksum* IPv4, dan pengiriman *ICMP Error Messages*.
-* [ ] **Milestone 3: Transport Layer (L4)** - Penyusunan *State Machine* TCP (*3-Way Handshake*, *Receive Buffers*, *4-Way Teardown*), protokol UDP, dan kalkulasi *Pseudo-Header*.
+* [X] **Milestone 3: Transport Layer (L4)** - Penyusunan *State Machine* TCP (*3-Way Handshake*, *Receive Buffers*, *4-Way Teardown*), protokol UDP, dan kalkulasi *Pseudo-Header*.
 * [ ] **Milestone 4: Application Layer (L7)** - Pembuatan *Wrapper API* `MagiSocket` untuk mengabstraksi komunikasi OS, serta perakitan layanan mandiri DHCP, DNS, dan server HTTP.
 * [ ] **Milestone 5: Fitur Bonus** - [Sebutkan fitur lanjutan yang kelompok Anda targetkan, misal: *Topology Visualizer*, *IP Fragmentation*, *ACL*, *NAT/PAT*, *RIPv2*, atau *Asynchronous Engine*].
 
 ## Pembagian Tugas
 
-* **Muhammad Aufar Rizqi Kusuma (13524061):** Coming soon
+* **Muhammad Aufar Rizqi Kusuma (13524061):** Coming soon (sibuk data)
 * **Kurt Mikhael Purba (13524065):** Milestone 0
-* **Bryan Pratama Putra Hendra (13524067):** Coming soon
-* **Philipp Hamara (13524101):** Milestone 1
+* **Bryan Pratama Putra Hendra (13524067):** Milestone 2
+* **Philipp Hamara (13524101):** Milestone 1, 3
