@@ -11,6 +11,7 @@
 #include "layer2/arp.hpp"
 #include "layer3/icmp.hpp"
 #include "layer3/ipv4.hpp"
+#include "layer4/tcp_socket.hpp"
 
 namespace magi {
 
@@ -40,6 +41,10 @@ private:
     uint16_t nextSequenceNumber;
     uint16_t nextIpIdentification;
     std::map<uint32_t, EchoProbeState> pendingEchoes;
+
+    // Simple socket maps for in-simulator TCP delivery
+    std::map<uint16_t, std::shared_ptr<TCPSocket>> listeningSockets;
+    std::map<std::string, std::shared_ptr<TCPSocket>> activeSockets;
 
     std::string getPrimaryIp() const;
     uint32_t makeEchoKey(uint16_t sequenceNumber) const;
@@ -78,6 +83,15 @@ public:
 
     void sendPing(const std::string& targetIp);
     void traceroute(const std::string& targetIp, uint8_t maxHops = 30);
+
+    // Allow upper layers to send IPv4 packets through this host (wrapper)
+    bool sendIpv4(const IPv4Packet& packet);
+
+    // TCP socket registration (simple in-simulator TCP delivery)
+    void registerListeningSocket(uint16_t port, std::shared_ptr<TCPSocket> socket);
+    void registerActiveSocket(const std::string& localIp, uint16_t localPort,
+                              const std::string& remoteIp, uint16_t remotePort,
+                              std::shared_ptr<TCPSocket> socket);
 };
 
 } // namespace magi

@@ -86,6 +86,7 @@ std::shared_ptr<TCPSegment> TCPSocket::respondToSyn(const TCPSegment& incomingSe
 
     auto segment = createSegment(TCP_FLAG_SYN | TCP_FLAG_ACK);
     segment->ackNum = nextExpectedSeq;
+    segment->updateChecksum(localIP, remoteIP);
     
     setState(TCPState::SYN_RCVD);
     
@@ -105,6 +106,7 @@ std::shared_ptr<TCPSegment> TCPSocket::acknowledgeConnection(const TCPSegment& i
     
     auto segment = createSegment(TCP_FLAG_ACK);
     segment->ackNum = nextExpectedSeq;
+    segment->updateChecksum(localIP, remoteIP);
     
     setState(TCPState::ESTABLISHED);
     
@@ -194,6 +196,7 @@ std::shared_ptr<TCPSegment> TCPSocket::respondToFin(const TCPSegment& incomingSe
 
         auto segment = createSegment(TCP_FLAG_ACK);
         segment->ackNum = nextExpectedSeq;
+        segment->updateChecksum(localIP, remoteIP);
         
         std::cout << "[TCP] Received FIN, responding with ACK" << std::endl;
         
