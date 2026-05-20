@@ -218,6 +218,22 @@ bool Host::sendIpv4Packet(const IPv4Packet& packet) {
     return true;
 }
 
+void Host::registerListeningSocket(uint16_t port, std::shared_ptr<TCPSocket> socket) {
+    listeningSockets[port] = socket;
+}
+
+void Host::registerActiveSocket(const std::string& localIp, uint16_t localPort,
+                                const std::string& remoteIp, uint16_t remotePort,
+                                std::shared_ptr<TCPSocket> socket) {
+    std::ostringstream oss;
+    oss << localIp << ":" << localPort << ":" << remoteIp << ":" << remotePort;
+    activeSockets[oss.str()] = socket;
+}
+
+bool Host::sendIpv4(const IPv4Packet& packet) {
+    return sendIpv4Packet(packet);
+}
+
 void Host::sendEchoProbe(const std::string& targetIp, uint8_t ttl, bool tracerouteProbe) {
     const uint16_t sequenceNumber = nextSequenceNumber++;
     const uint32_t echoKey = makeEchoKey(sequenceNumber);
@@ -352,63 +368,121 @@ void Host::handleIpv4Frame(const EthernetFrame& frame) {
         return;
     }
 
-    if (packet.protocol != 1) {
-        return;
-    }
+    // ICMP handling
+    if (packet.protocol == 1) {
+        ICMPMessage icmp;
+        try {
+            icmp.fromBytes(packet.payload);
+        } catch (...) {
+            return;
+        }
 
-    ICMPMessage icmp;
-    try {
-        icmp.fromBytes(packet.payload);
-    } catch (...) {
-        return;
-    }
+        if (!icmp.validateChecksum()) {
+            return;
+        }
 
-    if (!icmp.validateChecksum()) {
-        return;
-    }
+        if (icmp.type == kICMPEchoRequest) {
+            ICMPMessage reply;
+            reply.type = kICMPEchoReply;
+            reply.code = 0;
+            reply.identifier = icmp.identifier;
+            reply.sequenceNumber = icmp.sequenceNumber;
+            reply.payload = icmp.payload;
+            reply.updateChecksum();
 
-    if (icmp.type == kICMPEchoRequest) {
-        ICMPMessage reply;
-        reply.type = kICMPEchoReply;
-        reply.code = 0;
-        reply.identifier = icmp.identifier;
-        reply.sequenceNumber = icmp.sequenceNumber;
-        reply.payload = icmp.payload;
-        reply.updateChecksum();
+            IPv4Packet response;
+            response.srcIp = getPrimaryIp();
+            response.dstIp = packet.srcIp;
+            response.protocol = 1;
+            response.ttl = 64;
+            response.identification = nextIpIdentification++;
+            response.payload = reply.toBytes();
+            response.updateChecksum();
+            sendIpv4Packet(response);
+            return;
+        }
 
-        IPv4Packet response;
-        response.srcIp = getPrimaryIp();
-        response.dstIp = packet.srcIp;
-        response.protocol = 1;
-        response.ttl = 64;
-        response.identification = nextIpIdentification++;
-        response.payload = reply.toBytes();
-        response.updateChecksum();
-        sendIpv4Packet(response);
-        return;
-    }
-
-    if (icmp.type == kICMPEchoReply) {
-        completeEchoProbe(icmp.identifier,
-                          icmp.sequenceNumber,
-                          packet.srcIp,
-                          icmp.type,
-                          icmp.code,
-                          packet.ttl);
-        return;
-    }
-
-    if (icmp.type == kICMPTimeExceeded || icmp.type == kICMPDestinationUnreachable) {
-        uint16_t identifier = 0;
-        uint16_t sequenceNumber = 0;
-        if (extractEmbeddedEchoKey(icmp, identifier, sequenceNumber)) {
-            completeEchoProbe(identifier,
-                              sequenceNumber,
+        if (icmp.type == kICMPEchoReply) {
+            completeEchoProbe(icmp.identifier,
+                              icmp.sequenceNumber,
                               packet.srcIp,
                               icmp.type,
                               icmp.code,
                               packet.ttl);
+            return;
         }
+
+        if (icmp.type == kICMPTimeExceeded || icmp.type == kICMPDestinationUnreachable) {
+            uint16_t identifier = 0;
+            uint16_t sequenceNumber = 0;
+            if (extractEmbeddedEchoKey(icmp, identifier, sequenceNumber)) {
+                completeEchoProbe(identifier,
+                                  sequenceNumber,
+                                  packet.srcIp,
+                                  icmp.type,
+                                  icmp.code,
+                                  packet.ttl);
+            }
+        }
+
+        return;
+    }
+
+    // TCP handling
+    if (packet.protocol == 6) {
+        TCPSegment tcp;
+        try {
+            tcp.fromBytes(packet.payload);
+        } catch (...) {
+            return;
+        }
+
+        if (!tcp.validateChecksum(packet.srcIp, packet.dstIp)) {
+            return;
+        }
+
+        std::ostringstream keyoss;
+        keyoss << packet.dstIp << ":" << tcp.destinationPort << ":" << packet.srcIp << ":" << tcp.sourcePort;
+        std::string key = keyoss.str();
+        auto ait = activeSockets.find(key);
+        if (ait != activeSockets.end()) {
+            auto sock = ait->second;
+            std::shared_ptr<TCPSegment> response = sock->handleIncomingSegment(tcp);
+            if (response) {
+                IPv4Packet resp;
+                resp.srcIp = packet.dstIp;
+                resp.dstIp = packet.srcIp;
+                resp.protocol = 6;
+                resp.ttl = 64;
+                resp.identification = nextIpIdentification++;
+                resp.payload = response->toBytes();
+                resp.updateChecksum();
+                sendIpv4Packet(resp);
+            }
+            return;
+        }
+
+        auto lit = listeningSockets.find(tcp.destinationPort);
+        if (lit != listeningSockets.end()) {
+            auto serverSock = lit->second;
+            std::shared_ptr<TCPSegment> response = serverSock->handleIncomingSegment(tcp);
+            if (response) {
+                IPv4Packet resp;
+                resp.srcIp = packet.dstIp;
+                resp.dstIp = packet.srcIp;
+                resp.protocol = 6;
+                resp.ttl = 64;
+                resp.identification = nextIpIdentification++;
+                resp.payload = response->toBytes();
+                resp.updateChecksum();
+                sendIpv4Packet(resp);
+            }
+
+            registerActiveSocket(packet.dstIp, tcp.destinationPort, packet.srcIp, tcp.sourcePort, serverSock);
+            return;
+        }
+
+        return;
     }
 }
 

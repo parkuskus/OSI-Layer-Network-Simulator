@@ -266,33 +266,42 @@ void CLI::cmdTcpConnect(const std::vector<std::string>& args) {
     }
 
     const uint16_t ephemeralPort = 49152;
-    TCPSocket client(sourceIp, ephemeralPort, targetIp, targetPort);
-    TCPSocket server(targetIp, targetPort, sourceIp, ephemeralPort);
-    server.setState(TCPState::LISTEN);
+
+    auto client = std::make_shared<TCPSocket>(sourceIp, ephemeralPort, targetIp, targetPort);
+    auto serverSock = std::make_shared<TCPSocket>(targetIp, targetPort, sourceIp, ephemeralPort);
+    serverSock->setState(TCPState::LISTEN);
+
+    // Register sockets on hosts so TCP segments travel via IPv4/Ethernet
+    targetHost->registerListeningSocket(targetPort, serverSock);
+    sourceHost->registerActiveSocket(sourceIp, ephemeralPort, targetIp, targetPort, client);
 
     std::cout << "[TCP] " << args[1] << " tcp_connect " << targetIp << ":" << targetPort << std::endl;
 
-    std::shared_ptr<TCPSegment> syn = client.initiateConnection();
+    std::shared_ptr<TCPSegment> syn = client->initiateConnection();
     if (!syn) {
         std::cout << "[TCP] Gagal mengirim SYN." << std::endl;
         return;
     }
 
-    std::shared_ptr<TCPSegment> synAck = server.handleIncomingSegment(*syn);
-    if (!synAck) {
-        std::cout << "[TCP] Gagal menerima SYN-ACK dari server." << std::endl;
+    // Build IPv4 packet carrying TCP SYN and send via source host
+    IPv4Packet synPacket;
+    synPacket.srcIp = sourceIp;
+    synPacket.dstIp = targetIp;
+    synPacket.protocol = 6;
+    synPacket.ttl = 64;
+    synPacket.identification = 0;
+    synPacket.payload = syn->toBytes();
+    synPacket.updateChecksum();
+
+    if (!sourceHost->sendIpv4(synPacket)) {
+        std::cout << "[TCP] Gagal mengirim SYN (network error)." << std::endl;
         return;
     }
 
-    std::shared_ptr<TCPSegment> ack = client.handleIncomingSegment(*synAck);
-    if (!ack) {
-        std::cout << "[TCP] Gagal menghasilkan ACK terakhir." << std::endl;
-        return;
-    }
-
-    server.handleIncomingSegment(*ack);
-
-    if (client.isConnected() && server.isConnected()) {
+    // At this point the network delivery triggers the server to respond and responses
+    // are delivered back to the source host synchronously via Interface/Link.
+    // Check socket states after the exchange.
+    if (client->isConnected() && serverSock->isConnected()) {
         std::cout << "[TCP] 3-Way Handshake sukses (SYN -> SYN-ACK -> ACK)." << std::endl;
     } else {
         std::cout << "[TCP] Handshake selesai tapi state belum ESTABLISHED di kedua sisi." << std::endl;

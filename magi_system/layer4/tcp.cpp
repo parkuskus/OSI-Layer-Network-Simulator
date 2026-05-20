@@ -87,8 +87,8 @@ std::vector<uint8_t> TCPSegment::toBytes() const {
     bytes.push_back((windowSize >> 8) & 0xFF);
     bytes.push_back(windowSize & 0xFF);
 
-    bytes.push_back(0x00);
-    bytes.push_back(0x00);
+    bytes.push_back((checksum >> 8) & 0xFF);
+    bytes.push_back(checksum & 0xFF);
 
     bytes.push_back((urgentPointer >> 8) & 0xFF);
     bytes.push_back(urgentPointer & 0xFF);
