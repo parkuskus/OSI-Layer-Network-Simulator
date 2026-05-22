@@ -5,6 +5,7 @@
 #include "layer3/ipv4.hpp"
 #include "layer4/tcp.hpp"
 #include "layer4/tcp_socket.hpp"
+#include "layer7/udp_socket.hpp"
 
 #include <memory>
 
@@ -30,6 +31,43 @@ namespace magi
         {
             tcpTransport = std::make_shared<TCPSocket>(localIp, localPort, remoteIp, remotePort);
         }
+    }
+
+    void MagiSocket::ensureUdpTransport()
+    {
+        if (!udpTransport && host)
+        {
+            udpTransport = std::make_shared<UDPSocket>(host);
+            // If already bound, register with host
+            if (localPort != 0)
+            {
+                host->registerUdpSocket(localPort, udpTransport);
+            }
+        }
+    }
+
+    bool MagiSocket::sendUdpTo(const std::string &dstIp, uint16_t dstPort, const std::vector<uint8_t> &data)
+    {
+        if (sockType != SOCK_DGRAM || !host)
+        {
+            return false;
+        }
+
+        ensureUdpTransport();
+        if (!udpTransport)
+            return false;
+
+        return udpTransport->sendto(dstIp, dstPort, data) == data.size();
+    }
+
+    std::vector<uint8_t> MagiSocket::recvFromUdp(std::string &outSrcIp, uint16_t &outSrcPort, size_t bufSize)
+    {
+        if (sockType != SOCK_DGRAM || !udpTransport)
+        {
+            return {};
+        }
+
+        return udpTransport->recvfrom(outSrcIp, outSrcPort, bufSize);
     }
 
     bool MagiSocket::bind(const std::string &ip, uint16_t port)

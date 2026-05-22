@@ -2,6 +2,8 @@
 #include "core/interface.hpp"
 #include "layer2/ethernet.hpp"
 #include "layer7/http_server.hpp"
+#include "layer4/udp.hpp"
+#include "layer7/udp_socket.hpp"
 
 #include "layer3/ip_utils.hpp"
 
@@ -224,6 +226,19 @@ namespace magi
         }
 
         const std::string nextHopIp = resolveNextHop(packet.dstIp);
+        const std::vector<uint8_t> ipv4Bytes = packet.toBytes();
+        // Special-case: broadcast IP -> send as Ethernet broadcast without ARP
+        if (packet.dstIp == "255.255.255.255")
+        {
+            EthernetFrame frame;
+            frame.dstMac = "ff:ff:ff:ff:ff:ff";
+            frame.srcMac = iface->getMacAddress();
+            frame.etherType = kEtherTypeIpv4;
+            frame.vlanId = iputil::kUntaggedVlan;
+            frame.payload = ipv4Bytes;
+            iface->send(frame.toBytes());
+            return true;
+        }
         if (nextHopIp.empty())
         {
             std::cout << "[" << name << "] Tidak ada route ke " << packet.dstIp
@@ -231,7 +246,6 @@ namespace magi
             return false;
         }
 
-        const std::vector<uint8_t> ipv4Bytes = packet.toBytes();
         const std::map<std::string, std::string>::const_iterator cacheIt = arpCache.table.find(nextHopIp);
         if (cacheIt != arpCache.table.end())
         {
@@ -260,6 +274,19 @@ namespace magi
     void Host::registerListeningSocket(uint16_t port, std::shared_ptr<TCPSocket> socket)
     {
         listeningSockets[port] = socket;
+    }
+
+    void Host::registerUdpSocket(uint16_t port, std::shared_ptr<UDPSocket> socket)
+    {
+        if (socket)
+        {
+            udpSockets[port] = socket;
+        }
+    }
+
+    void Host::unregisterUdpSocket(uint16_t port)
+    {
+        udpSockets.erase(port);
     }
 
     void Host::registerActiveSocket(const std::string &localIp, uint16_t localPort,
@@ -486,7 +513,8 @@ namespace magi
 
         arpCache.table[packet.srcIp] = frame.srcMac;
 
-        if (packet.dstIp != getPrimaryIp())
+        // Allow packets targeted to this host or broadcast/zero-address (for DHCP)
+        if (packet.dstIp != getPrimaryIp() && packet.dstIp != "255.255.255.255" && packet.dstIp != "0.0.0.0")
         {
             return;
         }
@@ -554,6 +582,38 @@ namespace magi
                                       icmp.type,
                                       icmp.code,
                                       packet.ttl);
+                }
+            }
+
+            return;
+        }
+
+        // UDP handling
+        if (packet.protocol == 17)
+        {
+            UDPSegment udp;
+            try
+            {
+                udp.fromBytes(packet.payload);
+            }
+            catch (...)
+            {
+                return;
+            }
+
+            if (!udp.validateChecksum(packet.srcIp, packet.dstIp))
+            {
+                return;
+            }
+
+            // Deliver to registered UDP socket if any
+            auto uit = udpSockets.find(udp.destinationPort);
+            if (uit != udpSockets.end())
+            {
+                auto sock = uit->second;
+                if (sock)
+                {
+                    sock->onReceive(packet.srcIp, udp.sourcePort, udp.payload);
                 }
             }
 

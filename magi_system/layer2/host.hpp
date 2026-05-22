@@ -22,6 +22,7 @@ namespace magi
     class TCPSocket;
     class TCPSegment;
     class HTTPServer;
+    class UDPSocket;
 
     // Host Node
     class Host : public Node
@@ -51,6 +52,7 @@ namespace magi
         // Simple socket maps for in-simulator TCP delivery
         std::map<uint16_t, std::shared_ptr<TCPSocket>> listeningSockets;
         std::map<std::string, std::shared_ptr<TCPSocket>> activeSockets;
+        std::map<uint16_t, std::shared_ptr<UDPSocket>> udpSockets;
 
         std::string getPrimaryIp() const;
         uint32_t makeEchoKey(uint16_t sequenceNumber) const;
@@ -101,6 +103,9 @@ namespace magi
         void unregisterListeningSocket(uint16_t port);
         void unregisterActiveSocket(const std::string &localIp, uint16_t localPort,
                                     const std::string &remoteIp, uint16_t remotePort);
+        // UDP socket registration
+        void registerUdpSocket(uint16_t port, std::shared_ptr<UDPSocket> socket);
+        void unregisterUdpSocket(uint16_t port);
         // Initiate TCP close (send FIN) for an active socket matching endpoints
         bool initiateCloseToRemote(const std::string &localIp,
                                    const std::string &remoteIp,

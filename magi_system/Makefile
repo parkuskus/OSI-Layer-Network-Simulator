@@ -29,6 +29,7 @@ SOURCES := \
     layer4/udp.cpp \
     layer4/tcp_socket.cpp \
     layer7/magi_socket.cpp \
+    layer7/udp_socket.cpp \
     layer7/http_server.cpp \
     layer7/http_client.cpp
 

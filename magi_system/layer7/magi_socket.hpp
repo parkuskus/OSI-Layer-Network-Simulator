@@ -12,6 +12,7 @@ namespace magi
     class Host;
     class TCPSocket;
     class TCPSegment;
+    class UDPSocket;
 
     class MagiSocket : public std::enable_shared_from_this<MagiSocket>
     {
@@ -54,10 +55,14 @@ namespace magi
         bool listening;
 
         std::shared_ptr<TCPSocket> tcpTransport;
+        std::shared_ptr<UDPSocket> udpTransport;
 
         std::string normalizeIp(const std::string &ip) const;
         void ensureTcpTransport();
+        void ensureUdpTransport();
         bool sendTcpSegment(const std::shared_ptr<TCPSegment> &segment);
+        bool sendUdpTo(const std::string &dstIp, uint16_t dstPort, const std::vector<uint8_t> &data);
+        std::vector<uint8_t> recvFromUdp(std::string &outSrcIp, uint16_t &outSrcPort, size_t bufSize);
     };
 
 } // namespace magi
