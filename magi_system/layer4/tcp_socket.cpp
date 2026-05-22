@@ -121,6 +121,7 @@ namespace magi
 
         auto segment = createSegment(TCP_FLAG_SYN | TCP_FLAG_ACK);
         segment->ackNum = nextExpectedSeq;
+        std::cout << "[TCP] respondToSyn: localIP=" << localIP << " remoteIP=" << remoteIP << std::endl;
         segment->updateChecksum(localIP, remoteIP);
 
         setState(TCPState::SYN_RCVD);

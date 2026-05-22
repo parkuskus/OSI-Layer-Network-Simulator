@@ -237,7 +237,8 @@ namespace magi
             frame.etherType = kEtherTypeIpv4;
             frame.vlanId = iputil::kUntaggedVlan;
             frame.payload = ipv4Bytes;
-            iface->send(frame.toBytes());
+                std::cout << "[Host] " << name << " sending IPv4 broadcast " << packet.srcIp << "->" << packet.dstIp << " via MAC " << frame.srcMac << std::endl;
+                iface->send(frame.toBytes());
             return true;
         }
 
@@ -262,7 +263,8 @@ namespace magi
             frame.etherType = kEtherTypeIpv4;
             frame.vlanId = iputil::kUntaggedVlan;
             frame.payload = ipv4Bytes;
-            iface->send(frame.toBytes());
+                std::cout << "[Host] " << name << " sending IPv4 unicast " << packet.srcIp << "->" << packet.dstIp << " dstMac=" << frame.dstMac << std::endl;
+                iface->send(frame.toBytes());
             return true;
         }
 
@@ -513,8 +515,11 @@ namespace magi
             return;
         }
 
+        std::cout << "[Host] " << name << " received IPv4 frame: " << packet.srcIp << " -> " << packet.dstIp << ", ether src=" << frame.srcMac << " dst=" << frame.dstMac << std::endl;
+
         if (!packet.validateChecksum())
         {
+            std::cout << "[Host] " << name << " dropping IPv4 packet due to invalid checksum: " << packet.srcIp << "->" << packet.dstIp << std::endl;
             return;
         }
 
@@ -642,15 +647,18 @@ namespace magi
 
             if (!tcp.validateChecksum(packet.srcIp, packet.dstIp))
             {
+                std::cout << "[Host] " << name << " dropping TCP segment due to invalid checksum: " << packet.srcIp << "->" << packet.dstIp << std::endl;
                 return;
             }
 
             std::ostringstream keyoss;
             keyoss << packet.dstIp << ":" << tcp.destinationPort << ":" << packet.srcIp << ":" << tcp.sourcePort;
             std::string key = keyoss.str();
+            std::cout << "[Host] " << name << " TCP dispatch key=" << key << std::endl;
             auto ait = activeSockets.find(key);
             if (ait != activeSockets.end())
             {
+                std::cout << "[Host] " << name << " matched active socket for key=" << key << std::endl;
                 auto sock = ait->second;
                 std::shared_ptr<TCPSegment> response = sock->handleIncomingSegment(tcp);
                 if (response)
@@ -662,6 +670,16 @@ namespace magi
                     resp.ttl = 64;
                     resp.identification = nextIpIdentification++;
                     resp.payload = response->toBytes();
+                    try
+                    {
+                        TCPSegment seg;
+                        seg.fromBytes(resp.payload);
+                        seg.sourcePort = tcp.destinationPort;
+                        seg.destinationPort = tcp.sourcePort;
+                        seg.updateChecksum(resp.srcIp, resp.dstIp);
+                        resp.payload = seg.toBytes();
+                    }
+                    catch (...) {}
                     resp.updateChecksum();
                     sendIpv4Packet(resp);
                 }
@@ -679,6 +697,9 @@ namespace magi
             if (lit != listeningSockets.end())
             {
                 auto serverSock = lit->second;
+                // Update listening socket with remote IP for SYN-ACK response
+                serverSock->remoteIP = packet.srcIp;
+                serverSock->remotePort = tcp.sourcePort;
                 std::shared_ptr<TCPSegment> response = serverSock->handleIncomingSegment(tcp);
                 if (response)
                 {
@@ -689,6 +710,16 @@ namespace magi
                     resp.ttl = 64;
                     resp.identification = nextIpIdentification++;
                     resp.payload = response->toBytes();
+                    try
+                    {
+                        TCPSegment seg;
+                        seg.fromBytes(resp.payload);
+                        seg.sourcePort = tcp.destinationPort;
+                        seg.destinationPort = tcp.sourcePort;
+                        seg.updateChecksum(resp.srcIp, resp.dstIp);
+                        resp.payload = seg.toBytes();
+                    }
+                    catch (...) {}
                     resp.updateChecksum();
                     sendIpv4Packet(resp);
                 }

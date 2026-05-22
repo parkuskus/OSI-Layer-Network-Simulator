@@ -8,6 +8,8 @@
 #include "layer7/udp_socket.hpp"
 
 #include <memory>
+#include <thread>
+#include <chrono>
 
 namespace magi
 {
@@ -163,7 +165,23 @@ namespace magi
         synPacket.payload = syn->toBytes();
         synPacket.updateChecksum();
 
-        return host->sendIpv4(synPacket) && tcpTransport->isConnected();
+        bool sent = host->sendIpv4(synPacket);
+        if (!sent)
+            return false;
+
+        // Wait a short time for the synchronous handshake to complete
+        const int maxWaitMs = 500;
+        const int pollMs = 10;
+        int waited = 0;
+        while (waited < maxWaitMs)
+        {
+            if (tcpTransport->isConnected())
+                return true;
+            std::this_thread::sleep_for(std::chrono::milliseconds(pollMs));
+            waited += pollMs;
+        }
+
+        return tcpTransport->isConnected();
     }
 
     bool MagiSocket::sendTcpSegment(const std::shared_ptr<TCPSegment> &segment)
@@ -172,6 +190,8 @@ namespace magi
         {
             return false;
         }
+
+        std::cout << "[MagiSocket] sendTcpSegment: localIp=" << localIp << " remoteIp=" << remoteIp << " localPort=" << localPort << " remotePort=" << remotePort << std::endl;
 
         IPv4Packet packet;
         packet.srcIp = localIp;
