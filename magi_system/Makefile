@@ -43,9 +43,19 @@ $(TARGET): $(OBJECTS)
 	$(CXX) $(OBJECTS) -o $@ $(LDFLAGS)
 
 # Compile with auto-generated dependency files
-$(BUILD_DIR)/%.o: %.cpp
-	@mkdir -p $(dir $@)
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -MMD -MP -c $< -o $@
+
+# Use platform-specific recipe so `make` works both on Windows (cmd) and POSIX shells
+ifeq ($(OS),Windows_NT)
+$(BUILD_DIR)/%.o: %.cpp ; cmd /c if not exist "$(dir $@)" mkdir "$(dir $@)" && $(CXX) $(CPPFLAGS) $(CXXFLAGS) -MMD -MP -c $< -o $@
+
+ 
+
+else
+$(BUILD_DIR)/%.o: %.cpp ; mkdir -p $(dir $@) && $(CXX) $(CPPFLAGS) $(CXXFLAGS) -MMD -MP -c $< -o $@
+
+ 
+
+endif
 
 # Include dependencies when present
 -include $(DEPS)
@@ -53,6 +63,8 @@ $(BUILD_DIR)/%.o: %.cpp
 # Run helpers
 run: $(TARGET)
 	./$(TARGET)
+
+ 
 
 # Convenience alias used in README
 makerun: run
@@ -65,9 +77,7 @@ release: CXXFLAGS += -O2
 release: rebuild
 
 # Cleanup
-clean:
-	rm -rf $(BUILD_DIR)
-	rm -f $(TARGET) $(TARGET).exe
+clean: ; rm -rf $(BUILD_DIR) ; rm -f $(TARGET) $(TARGET).exe
 
 rebuild: clean all
 
