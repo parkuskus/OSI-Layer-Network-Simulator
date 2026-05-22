@@ -12,6 +12,7 @@
 #include <fstream>
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <iomanip>
 
 namespace magi
@@ -698,7 +699,7 @@ namespace magi
     {
         if (args.size() < 2)
         {
-            std::cout << "Penggunaan: <host_name> dhcp_discover" << std::endl;
+            std::cout << "Penggunaan: <host_name> dhcp_discover [timeout_ms] [attempts]" << std::endl;
             return;
         }
 
@@ -716,8 +717,21 @@ namespace magi
             return;
         }
 
-        std::cout << "[DHCP] Starting discovery on " << sourceHost->getName() << "..." << std::endl;
-        std::string assigned = DHCPClient::discover(sourceHost.get(), 3000);
+        int timeoutMs = 3000;
+        int attempts = 3;
+
+        if (args.size() >= 3)
+        {
+            timeoutMs = std::max(500, std::atoi(args[2].c_str()));
+        }
+        if (args.size() >= 4)
+        {
+            attempts = std::max(1, std::atoi(args[3].c_str()));
+        }
+
+        std::cout << "[DHCP] Starting discovery on " << sourceHost->getName()
+                  << " (timeout=" << timeoutMs << "ms, attempts=" << attempts << ")..." << std::endl;
+        std::string assigned = DHCPClient::discover(sourceHost.get(), timeoutMs, attempts);
         if (!assigned.empty())
         {
             std::cout << "[DHCP] Assigned IP: " << assigned << std::endl;
@@ -1750,7 +1764,7 @@ namespace magi
         std::cout << "  <host> http_get <url>              (blum)        - Meminta halaman web statis" << std::endl;
         std::cout << "  <host> http_server start [file]    (blum)        - Menjalankan web server" << std::endl;
         std::cout << "  <host> http_server stop            (blum)        - Mematikan web server" << std::endl;
-        std::cout << "  <host> dhcp_discover               (blum)        - Meminta alokasi IP otomatis" << std::endl;
+        std::cout << "  <host> dhcp_discover [ms] [n]      (blum)        - Meminta alokasi IP otomatis dengan retry" << std::endl;
         std::cout << std::endl;
         std::cout << "Inspeksi Entitas:" << std::endl;
         std::cout << "  <router> route                                   - Menampilkan Routing Table internal router." << std::endl;

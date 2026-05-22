@@ -10,10 +10,15 @@
 
 namespace magi {
 
-std::string DHCPClient::discover(Host *host, int timeoutMs)
+std::string DHCPClient::discover(Host *host, int timeoutMs, int maxAttempts)
 {
     if (!host)
         return "";
+
+    if (timeoutMs <= 0)
+        timeoutMs = 3000;
+    if (maxAttempts <= 0)
+        maxAttempts = 1;
 
     std::shared_ptr<UDPSocket> sock = std::make_shared<UDPSocket>(host);
 
@@ -35,57 +40,82 @@ std::string DHCPClient::discover(Host *host, int timeoutMs)
     std::string discoverMsg = std::string("DISCOVER:") + mac;
     std::vector<uint8_t> payload(discoverMsg.begin(), discoverMsg.end());
 
-    sock->sendto("255.255.255.255", 67, payload);
-
-    // wait for OFFER
-    const auto start = std::chrono::steady_clock::now();
+    const int attemptTimeoutMs = std::max(250, timeoutMs / maxAttempts);
+    const int retryPauseMs = std::max(50, std::min(250, attemptTimeoutMs / 4));
     std::string srcIp;
     uint16_t srcPort = 0;
-    while (true)
-    {
-        auto resp = sock->recvfrom(srcIp, srcPort, 2048);
-        if (!resp.empty())
-        {
-            std::string s(resp.begin(), resp.end());
-            if (s.rfind("OFFER:", 0) == 0)
-            {
-                std::string offerIp = s.substr(std::string("OFFER:").length());
-                // Send REQUEST:<ip>:<mac> as broadcast
-                std::string req = std::string("REQUEST:") + offerIp + ":" + mac;
-                std::vector<uint8_t> reqv(req.begin(), req.end());
-                sock->sendto("255.255.255.255", 67, reqv);
 
-                // wait for ACK
-                auto ackStart = std::chrono::steady_clock::now();
-                while (true)
+    for (int attempt = 1; attempt <= maxAttempts; ++attempt)
+    {
+        std::cout << "[DHCPClient] Attempt " << attempt << "/" << maxAttempts
+                  << " sending DISCOVER from " << host->getName()
+                  << " (timeout=" << attemptTimeoutMs << "ms)" << std::endl;
+
+        sock->sendto("255.255.255.255", 67, payload);
+
+        const auto attemptStart = std::chrono::steady_clock::now();
+        bool offerReceived = false;
+
+        while (true)
+        {
+            auto resp = sock->recvfrom(srcIp, srcPort, 2048);
+            if (!resp.empty())
+            {
+                std::string s(resp.begin(), resp.end());
+                if (s.rfind("OFFER:", 0) == 0)
                 {
-                    auto r2 = sock->recvfrom(srcIp, srcPort, 2048);
-                    if (!r2.empty())
+                    std::string offerIp = s.substr(std::string("OFFER:").length());
+                    offerReceived = true;
+                    std::cout << "[DHCPClient] Received OFFER " << offerIp
+                              << " on attempt " << attempt << std::endl;
+
+                    // Send REQUEST:<ip>:<mac> as broadcast
+                    std::string req = std::string("REQUEST:") + offerIp + ":" + mac;
+                    std::vector<uint8_t> reqv(req.begin(), req.end());
+                    sock->sendto("255.255.255.255", 67, reqv);
+
+                    // wait for ACK
+                    const auto ackStart = std::chrono::steady_clock::now();
+                    while (true)
                     {
-                        std::string s2(r2.begin(), r2.end());
-                        if (s2.rfind("ACK:", 0) == 0)
+                        auto r2 = sock->recvfrom(srcIp, srcPort, 2048);
+                        if (!r2.empty())
                         {
-                            std::string ip = s2.substr(std::string("ACK:").length());
-                            // Apply IP to host
-                            host->setIpAddress(ip + "/24");
-                            host->printInfo();
-                            host->unregisterUdpSocket(68);
-                            return ip;
+                            std::string s2(r2.begin(), r2.end());
+                            if (s2.rfind("ACK:", 0) == 0)
+                            {
+                                std::string ip = s2.substr(std::string("ACK:").length());
+                                // Apply IP to host
+                                host->setIpAddress(ip + "/24");
+                                host->printInfo();
+                                host->unregisterUdpSocket(68);
+                                std::cout << "[DHCPClient] Lease acquired: " << ip << std::endl;
+                                return ip;
+                            }
                         }
+                        if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - ackStart).count() >= attemptTimeoutMs)
+                            break;
+                        std::this_thread::sleep_for(std::chrono::milliseconds(retryPauseMs));
                     }
-                    if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - ackStart).count() > timeoutMs)
-                        break;
-                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+                    std::cout << "[DHCPClient] ACK timeout on attempt " << attempt << std::endl;
+                    break;
                 }
             }
+
+            if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - attemptStart).count() >= attemptTimeoutMs)
+                break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(retryPauseMs));
         }
-        if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count() > timeoutMs)
-            break;
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+        if (!offerReceived)
+        {
+            std::cout << "[DHCPClient] No OFFER received on attempt " << attempt << std::endl;
+        }
     }
 
     host->unregisterUdpSocket(68);
-    std::cout << "[DHCPClient] Discovery timed out" << std::endl;
+    std::cout << "[DHCPClient] Discovery failed after " << maxAttempts << " attempts" << std::endl;
     return "";
 }
 
