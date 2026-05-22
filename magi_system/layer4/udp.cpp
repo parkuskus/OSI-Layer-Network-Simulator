@@ -45,8 +45,8 @@ std::vector<uint8_t> UDPSegment::toBytes() const {
     bytes.push_back((totalLength >> 8) & 0xFF);
     bytes.push_back(totalLength & 0xFF);
 
-    bytes.push_back(0x00);
-    bytes.push_back(0x00);
+    bytes.push_back((checksum >> 8) & 0xFF);
+    bytes.push_back(checksum & 0xFF);
 
     bytes.insert(bytes.end(), payload.begin(), payload.end());
 

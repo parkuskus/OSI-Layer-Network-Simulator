@@ -7,6 +7,8 @@ Milestone 4 socket wrapper smoke test
 #include "core/link.hpp"
 #include "core/interface.hpp"
 #include "layer2/host.hpp"
+#include "layer7/dhcp_client.hpp"
+#include "layer7/dhcp_server.hpp"
 #include "layer7/magi_socket.hpp"
 
 #include <cstdint>
@@ -26,7 +28,7 @@ namespace
 bool runMilestone4Tests()
 {
     std::cout << std::endl
-              << "Running Milestone 4 socket wrapper smoke test" << std::endl;
+              << "Running Milestone 4 socket wrapper smoke test and DHCP DORA test" << std::endl;
 
     magi_test::TestStats stats;
 
@@ -65,6 +67,31 @@ bool runMilestone4Tests()
 
     magi_test::expect(stats, clientSocket.close(), "Client socket close succeeds");
     magi_test::expect(stats, serverSocket.close(), "Server socket close succeeds");
+
+    magi::Host dhcpServerHost("DHCP-S", "10.20.0.1/24", "10.20.0.254");
+    magi::Host dhcpClientHost("DHCP-C", "10.20.0.2/24", "10.20.0.1");
+    dhcpServerHost.getInterface(1)->setMacAddress("00:00:00:00:40:11");
+    dhcpClientHost.getInterface(1)->setMacAddress("00:00:00:00:40:12");
+    magi::Link::create(dhcpServerHost.getInterface(1), dhcpClientHost.getInterface(1));
+
+    std::string assignedIp;
+    std::string dhcpLog = magi_test::captureStdout([&]() {
+        dhcpServerHost.startDhcpServer();
+        assignedIp = magi::DHCPClient::discover(&dhcpClientHost, 2000, 3);
+        dhcpServerHost.stopDhcpServer();
+    });
+
+    if (assignedIp.empty())
+    {
+        std::cout << dhcpLog << std::endl;
+    }
+
+    magi_test::expect(stats, assignedIp == "10.20.0.99", "DHCP client receives expected lease");
+    magi_test::expect(stats, dhcpClientHost.getIpAddress() == "10.20.0.99/24", "DHCP client host IP is updated");
+    magi_test::expect(stats, magi_test::contains(dhcpLog, "Attempt 1/3"), "DHCP log records discovery attempt");
+    magi_test::expect(stats, magi_test::contains(dhcpLog, "Received DISCOVER"), "DHCP log records OFFER path");
+    magi_test::expect(stats, magi_test::contains(dhcpLog, "Received REQUEST"), "DHCP log records ACK path");
+    magi_test::expect(stats, magi_test::contains(dhcpLog, "Lease acquired"), "DHCP log records successful lease");
 
     std::cout << std::endl
               << "Milestone 4 summary: " << (stats.checks - stats.failed)

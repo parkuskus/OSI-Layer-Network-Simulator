@@ -220,17 +220,17 @@ namespace magi
             return false;
         }
 
-        if (getPrimaryIp().empty())
-        {
-            std::cout << "[" << name << "] IP host belum dikonfigurasi." << std::endl;
-            return false;
-        }
-
         const std::string nextHopIp = resolveNextHop(packet.dstIp);
         const std::vector<uint8_t> ipv4Bytes = packet.toBytes();
         // Special-case: broadcast IP -> send as Ethernet broadcast without ARP
         if (packet.dstIp == "255.255.255.255")
         {
+            if (getPrimaryIp().empty() && packet.srcIp != "0.0.0.0")
+            {
+                std::cout << "[" << name << "] IP host belum dikonfigurasi." << std::endl;
+                return false;
+            }
+
             EthernetFrame frame;
             frame.dstMac = "ff:ff:ff:ff:ff:ff";
             frame.srcMac = iface->getMacAddress();
@@ -239,6 +239,12 @@ namespace magi
             frame.payload = ipv4Bytes;
             iface->send(frame.toBytes());
             return true;
+        }
+
+        if (getPrimaryIp().empty())
+        {
+            std::cout << "[" << name << "] IP host belum dikonfigurasi." << std::endl;
+            return false;
         }
         if (nextHopIp.empty())
         {
