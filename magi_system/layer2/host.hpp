@@ -22,6 +22,7 @@ namespace magi
     class TCPSocket;
     class TCPSegment;
     class HTTPServer;
+    class DHCPServer;
     class UDPSocket;
 
     // Host Node
@@ -116,8 +117,13 @@ namespace magi
         void stopHttpServer();
         std::shared_ptr<HTTPServer> getHttpServer() const { return httpServer; }
 
+        void startDhcpServer();
+        void stopDhcpServer();
+        std::shared_ptr<DHCPServer> getDhcpServer() const { return dhcpServer; }
+
     private:
         std::shared_ptr<HTTPServer> httpServer;
+        std::shared_ptr<DHCPServer> dhcpServer;
     };
 
 } // namespace magi

@@ -2,6 +2,7 @@
 #include "core/interface.hpp"
 #include "layer2/ethernet.hpp"
 #include "layer7/http_server.hpp"
+#include "layer7/dhcp_server.hpp"
 #include "layer4/udp.hpp"
 #include "layer7/udp_socket.hpp"
 
@@ -795,6 +796,24 @@ namespace magi
         {
             httpServer->stop();
             httpServer.reset();
+        }
+    }
+
+    void Host::startDhcpServer()
+    {
+        if (!dhcpServer)
+        {
+            dhcpServer = std::make_shared<DHCPServer>(this);
+            dhcpServer->start();
+        }
+    }
+
+    void Host::stopDhcpServer()
+    {
+        if (dhcpServer)
+        {
+            dhcpServer->stop();
+            dhcpServer.reset();
         }
     }
 

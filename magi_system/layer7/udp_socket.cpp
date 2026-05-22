@@ -22,6 +22,11 @@ bool UDPSocket::bind(const std::string &ip, uint16_t port)
     return true;
 }
 
+void UDPSocket::setRecvHandler(RecvHandler h)
+{
+    recvHandler = h;
+}
+
 size_t UDPSocket::sendto(const std::string &dstIp, uint16_t dstPort, const std::vector<uint8_t> &data)
 {
     if (!host || localPort == 0)
@@ -71,6 +76,12 @@ std::vector<uint8_t> UDPSocket::recvfrom(std::string &outSrcIp, uint16_t &outSrc
 
 void UDPSocket::onReceive(const std::string &srcIp, uint16_t srcPort, const std::vector<uint8_t> &data)
 {
+    if (recvHandler)
+    {
+        recvHandler(srcIp, srcPort, data);
+        return;
+    }
+
     RecvEntry e;
     e.srcIp = srcIp;
     e.srcPort = srcPort;

@@ -6,6 +6,7 @@
 #include "layer4/tcp_socket.hpp"
 #include "layer7/http_server.hpp"
 #include "layer7/http_client.hpp"
+#include "layer7/dhcp_client.hpp"
 #include <iostream>
 #include <sstream>
 #include <fstream>
@@ -715,7 +716,56 @@ namespace magi
             return;
         }
 
-        std::cout << "[DHCP] dhcp_discover belum diimplementasikan penuh." << std::endl;
+        std::cout << "[DHCP] Starting discovery on " << sourceHost->getName() << "..." << std::endl;
+        std::string assigned = DHCPClient::discover(sourceHost.get(), 3000);
+        if (!assigned.empty())
+        {
+            std::cout << "[DHCP] Assigned IP: " << assigned << std::endl;
+        }
+        else
+        {
+            std::cout << "[DHCP] Discovery failed." << std::endl;
+        }
+    }
+
+    void CLI::cmdDhcpServer(const std::vector<std::string> &args)
+    {
+        if (args.size() < 3)
+        {
+            std::cout << "Penggunaan: <host_name> dhcp_server <start|stop>" << std::endl;
+            return;
+        }
+
+        auto sourceNode = findNode(args[1]);
+        if (!sourceNode)
+        {
+            std::cout << "Error: Node '" << args[1] << "' tidak ditemukan." << std::endl;
+            return;
+        }
+
+        auto sourceHost = std::dynamic_pointer_cast<Host>(sourceNode);
+        if (!sourceHost)
+        {
+            std::cout << "Error: Node '" << args[1] << "' bukan host." << std::endl;
+            return;
+        }
+
+        std::string action = args[2];
+        std::transform(action.begin(), action.end(), action.begin(), ::tolower);
+
+        if (action == "start")
+        {
+            sourceHost->startDhcpServer();
+            return;
+        }
+
+        if (action == "stop")
+        {
+            sourceHost->stopDhcpServer();
+            return;
+        }
+
+        std::cout << "Error: Gunakan 'start' atau 'stop'." << std::endl;
     }
 
     void CLI::cmdCreate(const std::vector<std::string> &args)

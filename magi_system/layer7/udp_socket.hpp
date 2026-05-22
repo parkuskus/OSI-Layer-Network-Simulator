@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include <queue>
+#include <functional>
 #include "layer4/udp.hpp"
 
 namespace magi {
@@ -23,6 +24,10 @@ public:
     // Called by Host when an IPv4 datagram with UDP payload arrives
     void onReceive(const std::string &srcIp, uint16_t srcPort, const std::vector<uint8_t> &data);
 
+    // Optional immediate receive handler (called by onReceive). If not set, packets are queued.
+    using RecvHandler = std::function<void(const std::string& srcIp, uint16_t srcPort, const std::vector<uint8_t>& data)>;
+    void setRecvHandler(RecvHandler h);
+
     uint16_t getLocalPort() const { return localPort; }
     std::string getLocalIp() const { return localIp; }
 
@@ -34,6 +39,7 @@ private:
     // Simple receive queue holding tuples of (srcIp, srcPort, payload)
     struct RecvEntry { std::string srcIp; uint16_t srcPort; std::vector<uint8_t> payload; };
     std::queue<RecvEntry> recvQueue;
+    RecvHandler recvHandler;
 };
 
 } // namespace magi

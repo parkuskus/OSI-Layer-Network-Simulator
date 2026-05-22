@@ -56,6 +56,7 @@ namespace magi
         void cmdHttpGet(const std::vector<std::string> &args);
         void cmdHttpServer(const std::vector<std::string> &args);
         void cmdDhcpDiscover(const std::vector<std::string> &args);
+        void cmdDhcpServer(const std::vector<std::string> &args);
         void cmdHelp();
 
         std::shared_ptr<Node> findNode(const std::string &name);
