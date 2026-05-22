@@ -15,6 +15,7 @@ This file is intentionally self-contained and does not require Makefile changes.
 bool runMilestone1Tests();
 bool runMilestone2Tests();
 bool runMilestone3Tests();
+bool runMilestone3TeardownTests();
 
 int main()
 {
@@ -32,6 +33,10 @@ int main()
         ++failedMilestones;
     }
     if (!runMilestone3Tests())
+    {
+        ++failedMilestones;
+    }
+    if (!runMilestone3TeardownTests())
     {
         ++failedMilestones;
     }
