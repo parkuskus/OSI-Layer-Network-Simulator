@@ -270,6 +270,19 @@ namespace magi
         activeSockets[oss.str()] = socket;
     }
 
+    void Host::unregisterListeningSocket(uint16_t port)
+    {
+        listeningSockets.erase(port);
+    }
+
+    void Host::unregisterActiveSocket(const std::string &localIp, uint16_t localPort,
+                                      const std::string &remoteIp, uint16_t remotePort)
+    {
+        std::ostringstream oss;
+        oss << localIp << ":" << localPort << ":" << remoteIp << ":" << remotePort;
+        activeSockets.erase(oss.str());
+    }
+
     bool Host::initiateCloseToRemote(const std::string &localIp,
                                      const std::string &remoteIp,
                                      uint16_t remotePort)

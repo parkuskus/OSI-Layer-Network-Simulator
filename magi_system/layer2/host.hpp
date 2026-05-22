@@ -95,6 +95,9 @@ namespace magi
         void registerActiveSocket(const std::string &localIp, uint16_t localPort,
                                   const std::string &remoteIp, uint16_t remotePort,
                                   std::shared_ptr<TCPSocket> socket);
+        void unregisterListeningSocket(uint16_t port);
+        void unregisterActiveSocket(const std::string &localIp, uint16_t localPort,
+                                    const std::string &remoteIp, uint16_t remotePort);
         // Initiate TCP close (send FIN) for an active socket matching endpoints
         bool initiateCloseToRemote(const std::string &localIp,
                                    const std::string &remoteIp,
