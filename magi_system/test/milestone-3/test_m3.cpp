@@ -3,6 +3,7 @@ Milestone 3 tests
 Run via test/test_main.cpp runner. The tests below verify:
 - TCP 3-way handshake and basic state transitions
 - TCP receive buffer reassembly for out-of-order payloads
+- TCP teardown state transitions
 - TCP/UDP checksum generation and serialization round-trip
 */
 
@@ -99,6 +100,43 @@ bool runMilestone3Tests()
     magi_test::expect(stats, receiver.addToReceiveBuffer(outOfOrder), "Out-of-order TCP segment is buffered");
     magi_test::expect(stats, receiver.addToReceiveBuffer(inOrder), "In-order TCP segment is accepted");
     magi_test::expect(stats, receiver.getReceivedData() == bytesFromString("helloworld"), "Receive buffer reassembles in-order data");
+
+    magi_test::printSection("Milestone 3 - TCP teardown state machine");
+    magi::TCPSocket teardownClient("10.0.0.2", 40000, "10.0.0.3", 80);
+    magi::TCPSocket teardownServer("10.0.0.3", 80, "10.0.0.2", 40000);
+    teardownClient.seqNum = 1000;
+    teardownServer.seqNum = 7000;
+    teardownServer.setState(magi::TCPState::LISTEN);
+
+    std::shared_ptr<magi::TCPSegment> teardownSyn = teardownClient.initiateConnection();
+    magi_test::expect(stats, teardownSyn != nullptr, "Teardown client produces SYN segment");
+
+    std::shared_ptr<magi::TCPSegment> teardownSynAck = teardownServer.respondToSyn(*teardownSyn);
+    magi_test::expect(stats, teardownSynAck != nullptr, "Teardown server produces SYN-ACK segment");
+
+    std::shared_ptr<magi::TCPSegment> teardownAck = teardownClient.acknowledgeConnection(*teardownSynAck);
+    magi_test::expect(stats, teardownAck != nullptr, "Teardown client produces final ACK");
+    teardownServer.handleIncomingSegment(*teardownAck);
+    magi_test::expect(stats, teardownClient.isConnected(), "Teardown client reaches ESTABLISHED");
+    magi_test::expect(stats, teardownServer.isConnected(), "Teardown server reaches ESTABLISHED");
+
+    std::shared_ptr<magi::TCPSegment> clientFin = teardownClient.initiateClose();
+    magi_test::expect(stats, clientFin != nullptr, "Client produces FIN segment");
+    std::shared_ptr<magi::TCPSegment> serverAck = teardownServer.respondToFin(*clientFin);
+    magi_test::expect(stats, serverAck != nullptr, "Server responds to FIN with ACK");
+
+    teardownClient.handleIncomingSegment(*serverAck);
+    magi_test::expect(stats, teardownClient.getStateString() == "FIN_WAIT_2", "Client enters FIN_WAIT_2 after ACK for FIN");
+    magi_test::expect(stats, teardownServer.getStateString() == "CLOSE_WAIT", "Server enters CLOSE_WAIT after ACKing client FIN");
+
+    std::shared_ptr<magi::TCPSegment> serverFin = teardownServer.initiateClose();
+    magi_test::expect(stats, serverFin != nullptr, "Server produces FIN in LAST_ACK path");
+    std::shared_ptr<magi::TCPSegment> clientAck = teardownClient.handleIncomingSegment(*serverFin);
+    magi_test::expect(stats, clientAck != nullptr, "Client ACKs server FIN");
+    magi_test::expect(stats, teardownClient.getStateString() == "TIME_WAIT", "Client enters TIME_WAIT after receiving server FIN");
+
+    teardownServer.handleIncomingSegment(*clientAck);
+    magi_test::expect(stats, teardownServer.isClosed(), "Server reaches CLOSED after final ACK");
 
     magi_test::printSection("Milestone 3 - UDP checksum and serialization");
     magi::UDPSegment udp;
