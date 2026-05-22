@@ -19,6 +19,9 @@ namespace magi
     class EthernetFrame;
     class Interface;
     class Packet;
+    class TCPSocket;
+    class TCPSegment;
+    class HTTPServer;
 
     // Host Node
     class Host : public Node
@@ -102,6 +105,14 @@ namespace magi
         bool initiateCloseToRemote(const std::string &localIp,
                                    const std::string &remoteIp,
                                    uint16_t remotePort);
+
+        // HTTP Server L7 Integration
+        void startHttpServer(const std::string &file = "index.html");
+        void stopHttpServer();
+        std::shared_ptr<HTTPServer> getHttpServer() const { return httpServer; }
+
+    private:
+        std::shared_ptr<HTTPServer> httpServer;
     };
 
 } // namespace magi

@@ -4,6 +4,8 @@
 #include "layer3/ip_utils.hpp"
 #include "layer4/udp.hpp"
 #include "layer4/tcp_socket.hpp"
+#include "layer7/http_server.hpp"
+#include "layer7/http_client.hpp"
 #include <iostream>
 #include <sstream>
 #include <fstream>
@@ -637,7 +639,17 @@ namespace magi
             return;
         }
 
-        std::cout << "[HTTP] http_get untuk '" << args[2] << "' belum diimplementasikan penuh." << std::endl;
+        std::vector<std::shared_ptr<Host>> allHosts;
+        for (const auto &pair : nodes)
+        {
+            auto host = std::dynamic_pointer_cast<Host>(pair.second);
+            if (host)
+            {
+                allHosts.push_back(host);
+            }
+        }
+
+        HTTPClient::get(sourceHost, args[2], allHosts);
     }
 
     void CLI::cmdHttpServer(const std::vector<std::string> &args)
@@ -668,13 +680,13 @@ namespace magi
         if (action == "start")
         {
             const std::string file = (args.size() >= 4) ? args[3] : "index.html";
-            std::cout << "[HTTP] http_server start (file: " << file << ") belum diimplementasikan penuh." << std::endl;
+            sourceHost->startHttpServer(file);
             return;
         }
 
         if (action == "stop")
         {
-            std::cout << "[HTTP] http_server stop belum diimplementasikan penuh." << std::endl;
+            sourceHost->stopHttpServer();
             return;
         }
 

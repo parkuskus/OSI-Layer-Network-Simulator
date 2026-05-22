@@ -1,6 +1,7 @@
 #include "host.hpp"
 #include "core/interface.hpp"
 #include "layer2/ethernet.hpp"
+#include "layer7/http_server.hpp"
 
 #include "layer3/ip_utils.hpp"
 
@@ -597,6 +598,13 @@ namespace magi
                     resp.updateChecksum();
                     sendIpv4Packet(resp);
                 }
+
+                // HTTP Server Tick Hook
+                if (tcp.destinationPort == 80 && httpServer && httpServer->isRunning())
+                {
+                    httpServer->tick();
+                }
+
                 return;
             }
 
@@ -709,6 +717,24 @@ namespace magi
             {
                 break;
             }
+        }
+    }
+
+    void Host::startHttpServer(const std::string &file)
+    {
+        if (!httpServer)
+        {
+            httpServer = std::make_shared<HTTPServer>(this, file);
+        }
+        httpServer->start();
+    }
+
+    void Host::stopHttpServer()
+    {
+        if (httpServer)
+        {
+            httpServer->stop();
+            httpServer.reset();
         }
     }
 

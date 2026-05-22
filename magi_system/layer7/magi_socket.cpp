@@ -10,6 +10,9 @@
 
 namespace magi
 {
+    const int MagiSocket::AF_INET;
+    const int MagiSocket::SOCK_STREAM;
+    const int MagiSocket::SOCK_DGRAM;
 
     MagiSocket::MagiSocket(Host *host, int family, int sockType)
         : host(host), family(family), sockType(sockType), localPort(0), remotePort(0), backlog(0), bound(false), listening(false)
