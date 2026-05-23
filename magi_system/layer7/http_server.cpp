@@ -1,6 +1,8 @@
 #include "layer7/http_server.hpp"
 #include "layer2/host.hpp"
 #include "layer7/magi_socket.hpp"
+#include "layer4/tcp_socket.hpp"
+#include "layer3/ip_utils.hpp"
 
 #include <iostream>
 #include <sstream>
@@ -168,24 +170,24 @@ namespace magi
         return resp.str();
     }
 
-    void HTTPServer::tick()
+    void HTTPServer::tick(const std::string &remoteIp, uint16_t remotePort)
     {
         if (!running || !serverSocket)
         {
             return;
         }
 
-        // Accept connection synchronously
-        std::shared_ptr<MagiSocket> conn = serverSocket->accept();
+        const std::string localIp = iputil::stripCidr(host->getIpAddress());
+        std::shared_ptr<TCPSocket> conn = host->findActiveSocket(localIp, 80, remoteIp, remotePort);
         if (!conn)
         {
             return;
         }
 
-        std::cout << "[HTTP Server] Menerima koneksi dari " << conn->getRemoteIp() << ":" << conn->getRemotePort() << std::endl;
+        std::cout << "[HTTP Server] Menerima koneksi dari " << remoteIp << ":" << remotePort << std::endl;
 
         // Receive request data
-        std::vector<uint8_t> reqData = conn->recv(4096);
+        std::vector<uint8_t> reqData = conn->getReceivedData();
         if (!reqData.empty())
         {
             std::string requestStr(reqData.begin(), reqData.end());
@@ -194,13 +196,37 @@ namespace magi
             // Generate and send response
             std::string responseStr = generateResponse(requestStr);
             std::vector<uint8_t> respData(responseStr.begin(), responseStr.end());
-            conn->send(respData);
+            std::shared_ptr<TCPSegment> responseSegment = conn->sendData(respData);
+            if (responseSegment)
+            {
+                IPv4Packet responsePacket;
+                responsePacket.srcIp = localIp;
+                responsePacket.dstIp = remoteIp;
+                responsePacket.protocol = 6;
+                responsePacket.ttl = 64;
+                responsePacket.identification = 0;
+                responsePacket.payload = responseSegment->toBytes();
+                responsePacket.updateChecksum();
+                host->sendIpv4(responsePacket);
+            }
 
             std::cout << "[HTTP Server] Mengirimkan HTTP Response (size: " << responseStr.size() << " bytes)" << std::endl;
         }
 
         // Complete teardown
-        conn->close();
+        std::shared_ptr<TCPSegment> finSegment = conn->initiateClose();
+        if (finSegment)
+        {
+            IPv4Packet finPacket;
+            finPacket.srcIp = localIp;
+            finPacket.dstIp = remoteIp;
+            finPacket.protocol = 6;
+            finPacket.ttl = 64;
+            finPacket.identification = 0;
+            finPacket.payload = finSegment->toBytes();
+            finPacket.updateChecksum();
+            host->sendIpv4(finPacket);
+        }
 
         // Re-listen immediately to restore the server socket back to LISTEN state for subsequent queries
         serverSocket->listen(5);

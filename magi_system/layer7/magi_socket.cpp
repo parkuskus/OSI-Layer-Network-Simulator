@@ -10,6 +10,7 @@
 #include <memory>
 #include <thread>
 #include <chrono>
+#include <iostream>
 
 namespace magi
 {
@@ -115,8 +116,8 @@ namespace magi
         std::shared_ptr<MagiSocket> accepted = std::make_shared<MagiSocket>(host, family, sockType);
         accepted->localIp = localIp;
         accepted->localPort = localPort;
-        accepted->remoteIp = remoteIp;
-        accepted->remotePort = remotePort;
+        accepted->remoteIp = tcpTransport->remoteIP;
+        accepted->remotePort = tcpTransport->remotePort;
         accepted->bound = bound;
         accepted->listening = false;
         accepted->tcpTransport = tcpTransport;

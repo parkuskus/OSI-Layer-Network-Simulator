@@ -340,18 +340,23 @@ namespace magi
             handleSYNACK(segment);
             response = acknowledgeConnection(segment);
         }
-        else if (segment.hasACK() && !segment.hasSYN() && !segment.hasFIN())
+        else
         {
-            handleACK(segment);
-        }
-        else if (segment.hasFIN())
-        {
-            handleFIN(segment);
-            response = respondToFin(segment);
-        }
-        else if (!segment.payload.empty())
-        {
-            handleDATA(segment);
+            if (segment.hasACK() && !segment.hasSYN())
+            {
+                handleACK(segment);
+            }
+
+            if (!segment.payload.empty())
+            {
+                handleDATA(segment);
+            }
+
+            if (segment.hasFIN())
+            {
+                handleFIN(segment);
+                response = respondToFin(segment);
+            }
         }
 
         return response;

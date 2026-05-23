@@ -23,6 +23,7 @@ namespace magi
     class TCPSegment;
     class HTTPServer;
     class DHCPServer;
+    class DNSServer;
     class UDPSocket;
 
     // Host Node
@@ -101,6 +102,8 @@ namespace magi
         void registerActiveSocket(const std::string &localIp, uint16_t localPort,
                                   const std::string &remoteIp, uint16_t remotePort,
                                   std::shared_ptr<TCPSocket> socket);
+        std::shared_ptr<TCPSocket> findActiveSocket(const std::string &localIp, uint16_t localPort,
+                                const std::string &remoteIp, uint16_t remotePort) const;
         void unregisterListeningSocket(uint16_t port);
         void unregisterActiveSocket(const std::string &localIp, uint16_t localPort,
                                     const std::string &remoteIp, uint16_t remotePort);
@@ -121,9 +124,14 @@ namespace magi
         void stopDhcpServer();
         std::shared_ptr<DHCPServer> getDhcpServer() const { return dhcpServer; }
 
+        void startDnsServer();
+        void stopDnsServer();
+        std::shared_ptr<DNSServer> getDnsServer() const { return dnsServer; }
+
     private:
         std::shared_ptr<HTTPServer> httpServer;
         std::shared_ptr<DHCPServer> dhcpServer;
+        std::shared_ptr<DNSServer> dnsServer;
     };
 
 } // namespace magi

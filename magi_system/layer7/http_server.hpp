@@ -27,7 +27,7 @@ namespace magi
 
         bool start();
         void stop();
-        void tick();
+        void tick(const std::string &remoteIp, uint16_t remotePort);
 
         bool isRunning() const { return running; }
         std::string getFilename() const { return filename; }

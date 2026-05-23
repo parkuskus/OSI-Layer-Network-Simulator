@@ -3,6 +3,7 @@
 #include "layer2/ethernet.hpp"
 #include "layer7/http_server.hpp"
 #include "layer7/dhcp_server.hpp"
+#include "layer7/dns_server.hpp"
 #include "layer4/udp.hpp"
 #include "layer7/udp_socket.hpp"
 
@@ -305,6 +306,19 @@ namespace magi
         std::ostringstream oss;
         oss << localIp << ":" << localPort << ":" << remoteIp << ":" << remotePort;
         activeSockets[oss.str()] = socket;
+    }
+
+    std::shared_ptr<TCPSocket> Host::findActiveSocket(const std::string &localIp, uint16_t localPort,
+                                                      const std::string &remoteIp, uint16_t remotePort) const
+    {
+        std::ostringstream oss;
+        oss << localIp << ":" << localPort << ":" << remoteIp << ":" << remotePort;
+        std::map<std::string, std::shared_ptr<TCPSocket>>::const_iterator it = activeSockets.find(oss.str());
+        if (it != activeSockets.end())
+        {
+            return it->second;
+        }
+        return nullptr;
     }
 
     void Host::unregisterListeningSocket(uint16_t port)
@@ -684,10 +698,10 @@ namespace magi
                     sendIpv4Packet(resp);
                 }
 
-                // HTTP Server Tick Hook
-                if (tcp.destinationPort == 80 && httpServer && httpServer->isRunning())
+                // HTTP Server Tick Hook: only when the segment actually carries request data
+                if (tcp.destinationPort == 80 && httpServer && httpServer->isRunning() && tcp.getPayloadSize() > 0)
                 {
-                    httpServer->tick();
+                    httpServer->tick(packet.srcIp, tcp.sourcePort);
                 }
 
                 return;
@@ -851,6 +865,24 @@ namespace magi
         {
             dhcpServer->stop();
             dhcpServer.reset();
+        }
+    }
+
+    void Host::startDnsServer()
+    {
+        if (!dnsServer)
+        {
+            dnsServer = std::make_shared<DNSServer>(this);
+            dnsServer->start();
+        }
+    }
+
+    void Host::stopDnsServer()
+    {
+        if (dnsServer)
+        {
+            dnsServer->stop();
+            dnsServer.reset();
         }
     }
 

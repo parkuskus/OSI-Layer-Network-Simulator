@@ -191,6 +191,13 @@ namespace magi
                     cmdDhcpDiscover(dhcpArgs);
                     return true;
                 }
+                if (subcmd == "dns_server" && !extraArgs.empty())
+                {
+                    std::vector<std::string> dnsArgs = {"dns_server", entityName};
+                    dnsArgs.insert(dnsArgs.end(), extraArgs.begin(), extraArgs.end());
+                    cmdDnsServer(dnsArgs);
+                    return true;
+                }
                 return false;
             };
 
@@ -211,7 +218,7 @@ namespace magi
             // Format 2 (alias): <subcommand> <entity> [args]
             if ((cmd == "mac" || cmd == "arp" || cmd == "ping" || cmd == "traceroute" ||
                  cmd == "tcp_connect" || cmd == "udp_send" || cmd == "http_get" || cmd == "http_server" ||
-                 cmd == "dhcp_discover") &&
+                 cmd == "dhcp_discover" || cmd == "dns_server") &&
                 args.size() >= 2)
             {
                 std::vector<std::string> extraArgs;
@@ -776,6 +783,46 @@ namespace magi
         if (action == "stop")
         {
             sourceHost->stopDhcpServer();
+            return;
+        }
+
+        std::cout << "Error: Gunakan 'start' atau 'stop'." << std::endl;
+    }
+
+    void CLI::cmdDnsServer(const std::vector<std::string> &args)
+    {
+        if (args.size() < 3)
+        {
+            std::cout << "Penggunaan: <host_name> dns_server <start|stop>" << std::endl;
+            return;
+        }
+
+        auto sourceNode = findNode(args[1]);
+        if (!sourceNode)
+        {
+            std::cout << "Error: Node '" << args[1] << "' tidak ditemukan." << std::endl;
+            return;
+        }
+
+        auto sourceHost = std::dynamic_pointer_cast<Host>(sourceNode);
+        if (!sourceHost)
+        {
+            std::cout << "Error: Node '" << args[1] << "' bukan host." << std::endl;
+            return;
+        }
+
+        std::string action = args[2];
+        std::transform(action.begin(), action.end(), action.begin(), ::tolower);
+
+        if (action == "start")
+        {
+            sourceHost->startDnsServer();
+            return;
+        }
+
+        if (action == "stop")
+        {
+            sourceHost->stopDnsServer();
             return;
         }
 
@@ -1761,10 +1808,11 @@ namespace magi
         std::cout << "  <host> traceroute <ip>                           - Melacak rute hop-by-hop" << std::endl;
         std::cout << "  <host> tcp_connect <ip> <port>                   - Melakukan TCP Handshake" << std::endl;
         std::cout << "  <host> udp_send <ip> <src_port> <dst_port>       - Membuat dan uji UDP segment" << std::endl;
-        std::cout << "  <host> http_get <url>              (blum)        - Meminta halaman web statis" << std::endl;
-        std::cout << "  <host> http_server start [file]    (blum)        - Menjalankan web server" << std::endl;
-        std::cout << "  <host> http_server stop            (blum)        - Mematikan web server" << std::endl;
-        std::cout << "  <host> dhcp_discover [ms] [n]      (blum)        - Meminta alokasi IP otomatis dengan retry" << std::endl;
+        std::cout << "  <host> http_get <url>                            - Meminta halaman web statis" << std::endl;
+        std::cout << "  <host> http_server start [file]                  - Menjalankan web server" << std::endl;
+        std::cout << "  <host> http_server stop                          - Mematikan web server" << std::endl;
+        std::cout << "  <host> dhcp_discover [ms] [n]                    - Meminta alokasi IP otomatis dengan retry" << std::endl;
+        std::cout << "  <host> dns_server start|stop                     - Menjalankan atau menghentikan DNS server" << std::endl;
         std::cout << std::endl;
         std::cout << "Inspeksi Entitas:" << std::endl;
         std::cout << "  <router> route                                   - Menampilkan Routing Table internal router." << std::endl;

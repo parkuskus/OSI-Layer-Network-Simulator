@@ -32,6 +32,8 @@ SOURCES := \
     layer7/udp_socket.cpp \
     layer7/dhcp_server.cpp \
     layer7/dhcp_client.cpp \
+    layer7/dns_server.cpp \
+    layer7/dns_client.cpp \
     layer7/http_server.cpp \
     layer7/http_client.cpp
 

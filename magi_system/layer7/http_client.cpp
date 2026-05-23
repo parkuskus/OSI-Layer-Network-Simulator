@@ -1,6 +1,7 @@
 #include "layer7/http_client.hpp"
 #include "layer2/host.hpp"
 #include "layer7/magi_socket.hpp"
+#include "layer7/dns_client.hpp"
 #include "layer3/ip_utils.hpp"
 
 #include <iostream>
@@ -37,49 +38,24 @@ namespace magi
         std::string hostStr = (slashPos == std::string::npos) ? rawUrl : rawUrl.substr(0, slashPos);
         std::string pathStr = (slashPos == std::string::npos) ? "/" : rawUrl.substr(slashPos);
 
-        // 2. Resolve domain/host to IP address
-        std::string targetIp = "";
+        // 2. Resolve domain/host to IP address through the in-simulator DNS path,
+        // then fall back to the topology list if no DNS server answers.
+        std::string targetIp = DNSClient::resolve(sourceHost, hostStr, allHosts);
         std::shared_ptr<Host> targetHost = nullptr;
-
-        // Try to match by IP, Host Name, or DNS-like Name
-        for (const auto &h : allHosts)
-        {
-            std::string hIp = iputil::stripCidr(h->getIpAddress());
-            std::string hName = h->getName();
-
-            // Lowercase comparison helper
-            auto toLower = [](std::string s) {
-                std::transform(s.begin(), s.end(), s.begin(), ::tolower);
-                return s;
-            };
-
-            if (hIp == hostStr || toLower(hName) == toLower(hostStr))
-            {
-                targetIp = hIp;
-                targetHost = h;
-                break;
-            }
-        }
-
-        // If not found in hosts, check if the string itself is a valid IP
-        if (targetIp.empty() && iputil::isValidIp(hostStr))
-        {
-            targetIp = hostStr;
-            // Search for host matching this IP
-            for (const auto &h : allHosts)
-            {
-                if (iputil::stripCidr(h->getIpAddress()) == targetIp)
-                {
-                    targetHost = h;
-                    break;
-                }
-            }
-        }
 
         if (targetIp.empty())
         {
             std::cout << "Error: Tidak dapat melakukan resolusi nama host / IP untuk '" << hostStr << "'" << std::endl;
             return;
+        }
+
+        for (const auto &h : allHosts)
+        {
+            if (iputil::stripCidr(h->getIpAddress()) == targetIp)
+            {
+                targetHost = h;
+                break;
+            }
         }
 
         if (!targetHost)
