@@ -67,7 +67,6 @@ Catatan: proyek tidak memerlukan dependensi eksternal khusus; cukup compiler sta
 8) Extensibility
 - Direktori `middleboxes/` dan `utils/` disediakan untuk menempatkan eksperimen tambahan seperti firewall sederhana, NAT, atau middlebox lain untuk eksperimen lebih lanjut.
 
-Jika mau, saya bisa menambahkan contoh perintah lengkap dan keluaran contoh (contoh `route add` atau output `arp`/`mac`) di bawah tiap sub-bab — beri tahu bagian mana yang ingin Anda perinci lebih lanjut.
 
 
 ## Cara Build dan Run 
