@@ -12,6 +12,7 @@
 #include "layer3/ipv4.hpp"
 #include "layer3/acl.hpp"
 #include "layer3/nat.hpp"
+#include "layer3/rip.hpp"
 
 namespace magi {
 
@@ -32,6 +33,15 @@ struct RouterStaticRoute {
     int outVlanId;
 };
 
+struct RouterRipRoute {
+    std::string destinationCidr;
+    std::string nextHopIp;
+    uint32_t outPortNumber;
+    int outVlanId;
+    uint8_t metric;
+    int ageTimer;
+};
+
 struct RouterResolvedRoute {
     std::string destinationCidr;
     uint8_t prefixLength;
@@ -39,6 +49,7 @@ struct RouterResolvedRoute {
     uint32_t outPortNumber;
     int outVlanId;
     bool connected;
+    std::string routeSource;
 };
 
 struct RouterPendingPacket {
@@ -89,6 +100,19 @@ private:
     std::set<uint32_t> natInsideInterfaces;  // Ports marked as "inside" for NAT
     std::set<uint32_t> natOutsideInterfaces; // Ports marked as "outside" for NAT
 
+    // RIP
+    std::vector<RouterRipRoute> ripRoutes;
+    bool ripEnabled;
+    int ripUpdateInterval;
+    int ripCommandCounter;
+    int ripInvalidTimeout;
+    int ripFlushTimeout;
+
+    void processRipUpdate(const std::string& sourceIp, const std::vector<uint8_t>& ripPayload, uint32_t ingressPort, int vlanId);
+    void sendRipUpdates();
+    void sendRipUpdateOnInterface(uint32_t portNumber, int vlanId);
+    void buildRipEntriesForInterface(uint32_t portNumber, int vlanId, std::vector<RipEntry>& entries) const;
+
     std::string makeArpKey(uint32_t portNumber, int vlanId, const std::string& ip) const;
     const RouterLogicalInterface* getLogicalInterface(uint32_t portNumber, int vlanId) const;
     const RouterLogicalInterface* findInterfaceByIp(const std::string& ip) const;
@@ -122,6 +146,14 @@ public:
                   int outVlanId);
     void printRoutingTable() const;
     void printArpCache() const;
+
+    // RIP methods
+    void enableRip();
+    void disableRip();
+    bool isRipEnabled() const { return ripEnabled; }
+    void triggerRipUpdate();
+    void ageRipRoutes();
+    void printRipRoutes() const;
 
     // ACL methods
     int addIngressACLRule(const ACLRule& rule);
