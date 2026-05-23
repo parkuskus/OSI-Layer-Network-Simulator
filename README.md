@@ -17,8 +17,8 @@ MAGI System adalah simulator jaringan edukasional yang mengimplementasikan lapis
 ## Prerequisites
 
 - Compiler C++ (g++ atau clang) dengan dukungan C++11
-- `make` (Linux/macOS) atau `mingw32-make` (Windows/MinGW)
-- Shell/terminal untuk menjalankan binari
+- `make`
+- Shell/terminal pada Linux untuk menjalankan binari
 
 Catatan: proyek tidak memerlukan dependensi eksternal khusus; cukup compiler standar dan Makefile.
 
@@ -71,9 +71,7 @@ Catatan: proyek tidak memerlukan dependensi eksternal khusus; cukup compiler sta
 
 ## Cara Build dan Run 
 
-Build dan jalankan dari direktori `magi_system`.
-
-Linux / macOS
+Build dan jalankan dari direktori `magi_system` pada Linux.
 
 ```bash
 cd magi_system
@@ -81,17 +79,9 @@ make            # membangun executable
 ./magi_system   # jalankan CLI interaktif
 ```
 
-Windows (MinGW)
-
-```powershell
-cd magi_system
-mingw32-make
-.\magi_system.exe
-```
-
 Catatan:
-- Jika Makefile menyediakan target `makerun`, Anda bisa menggunakan `make makerun` atau `mingw32-make makerun` sebagai shortcut.
-- Untuk rebuild bersih: `make clean && make` (atau sesuai target di Makefile).
+- Jika Makefile menyediakan target `makerun`, Anda bisa menggunakan `make makerun` sebagai shortcut.
+- Untuk rebuild bersih: `make clean && make`.
 
 ## Struktur Proyek 
 
