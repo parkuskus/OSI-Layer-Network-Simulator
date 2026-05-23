@@ -97,6 +97,14 @@ namespace magi
         {
             cmdRoute(args);
         }
+        else if (cmd == "acl")
+        {
+            cmdACL(args);
+        }
+        else if (cmd == "nat")
+        {
+            cmdNAT(args);
+        }
         else if (cmd == "help" || cmd == "?")
         {
             cmdHelp();
@@ -1629,6 +1637,296 @@ namespace magi
                   << " dev " << outInterfaceSpec << std::endl;
     }
 
+    void CLI::cmdACL(const std::vector<std::string> &args)
+    {
+        if (args.size() < 2)
+        {
+            std::cout << "Penggunaan:" << std::endl;
+            std::cout << "  acl <router> ingress|egress [list]                 - Tampilkan ACL rules" << std::endl;
+            std::cout << "  acl <router> ingress|egress add <action> <src_ip> <dst_ip> [proto] [src_port] [dst_port]" << std::endl;
+            std::cout << "  acl <router> ingress|egress remove <rule_id>" << std::endl;
+            std::cout << "  acl <router> ingress|egress clear" << std::endl;
+            return;
+        }
+
+        std::string routerName = args[1];
+        auto node = findNode(routerName);
+        if (!node)
+        {
+            std::cout << "Error: Node '" << routerName << "' tidak ditemukan." << std::endl;
+            return;
+        }
+
+        auto router = std::dynamic_pointer_cast<Router>(node);
+        if (!router)
+        {
+            std::cout << "Error: Node '" << routerName << "' bukan router." << std::endl;
+            return;
+        }
+
+        if (args.size() < 3)
+        {
+            std::cout << "Error: Gunakan 'ingress' atau 'egress'." << std::endl;
+            return;
+        }
+
+        std::string direction = args[2];
+        std::transform(direction.begin(), direction.end(), direction.begin(), ::tolower);
+
+        bool isIngress = (direction == "ingress");
+        bool isEgress = (direction == "egress");
+        if (!isIngress && !isEgress)
+        {
+            std::cout << "Error: Gunakan 'ingress' atau 'egress'." << std::endl;
+            return;
+        }
+
+        if (args.size() < 4)
+        {
+            // Show ACL
+            if (isIngress)
+                router->printIngressACL();
+            else
+                router->printEgressACL();
+            return;
+        }
+
+        std::string subCmd = args[3];
+        std::transform(subCmd.begin(), subCmd.end(), subCmd.begin(), ::tolower);
+
+        if (subCmd == "list")
+        {
+            if (isIngress)
+                router->printIngressACL();
+            else
+                router->printEgressACL();
+        }
+        else if (subCmd == "add")
+        {
+            if (args.size() < 7)
+            {
+                std::cout << "Penggunaan: acl <router> ingress|egress add <action> <src_ip> <dst_ip> [proto] [src_port] [dst_port]" << std::endl;
+                return;
+            }
+
+            std::string actionStr = args[4];
+            std::transform(actionStr.begin(), actionStr.end(), actionStr.begin(), ::tolower);
+            ACLAction action = (actionStr == "permit") ? ACLAction::PERMIT : ACLAction::DENY;
+
+            ACLRule rule;
+            rule.action = action;
+            rule.sourceIpCidr = args[5];
+            rule.destIpCidr = args[6];
+
+            // Parse optional protocol
+            if (args.size() > 7)
+            {
+                std::string proto = args[7];
+                std::transform(proto.begin(), proto.end(), proto.begin(), ::tolower);
+                if (proto == "tcp")
+                    rule.protocol = ACLProtocol::TCP;
+                else if (proto == "udp")
+                    rule.protocol = ACLProtocol::UDP;
+                else if (proto == "icmp")
+                    rule.protocol = ACLProtocol::ICMP;
+                else
+                    rule.protocol = ACLProtocol::ANY;
+            }
+
+            // Parse optional ports
+            if (args.size() > 8 && (rule.protocol == ACLProtocol::TCP || rule.protocol == ACLProtocol::UDP))
+            {
+                uint16_t srcPort = static_cast<uint16_t>(std::atoi(args[8].c_str()));
+                rule.sourcePortRange = ACLPortRange(srcPort);
+            }
+
+            if (args.size() > 9 && (rule.protocol == ACLProtocol::TCP || rule.protocol == ACLProtocol::UDP))
+            {
+                uint16_t dstPort = static_cast<uint16_t>(std::atoi(args[9].c_str()));
+                rule.destPortRange = ACLPortRange(dstPort);
+            }
+
+            int ruleId;
+            if (isIngress)
+                ruleId = router->addIngressACLRule(rule);
+            else
+                ruleId = router->addEgressACLRule(rule);
+
+            std::cout << "ACL rule ditambahkan dengan ID: " << ruleId << std::endl;
+        }
+        else if (subCmd == "remove")
+        {
+            if (args.size() < 5)
+            {
+                std::cout << "Penggunaan: acl <router> ingress|egress remove <rule_id>" << std::endl;
+                return;
+            }
+
+            int ruleId = std::atoi(args[4].c_str());
+            bool success;
+            if (isIngress)
+                success = router->removeIngressACLRule(ruleId);
+            else
+                success = router->removeEgressACLRule(ruleId);
+
+            if (success)
+                std::cout << "ACL rule " << ruleId << " dihapus." << std::endl;
+            else
+                std::cout << "Error: ACL rule " << ruleId << " tidak ditemukan." << std::endl;
+        }
+        else if (subCmd == "clear")
+        {
+            if (isIngress)
+                router->clearIngressACL();
+            else
+                router->clearEgressACL();
+
+            std::cout << "Semua ACL rules di-clear." << std::endl;
+        }
+        else
+        {
+            std::cout << "Error: Sub-command ACL tidak valid. Gunakan: list, add, remove, clear." << std::endl;
+        }
+    }
+
+    void CLI::cmdNAT(const std::vector<std::string> &args)
+    {
+        if (args.size() < 2)
+        {
+            std::cout << "Penggunaan:" << std::endl;
+            std::cout << "  nat <router> [list]                            - Tampilkan NAT mappings" << std::endl;
+            std::cout << "  nat <router> static <int_ip> <int_port> <ext_ip> <ext_port> <tcp|udp>" << std::endl;
+            std::cout << "  nat <router> dynamic <int_ip> <int_port> <ext_ip> <tcp|udp>" << std::endl;
+            std::cout << "  nat <router> inside <port>                     - Set port sebagai interface inside" << std::endl;
+            std::cout << "  nat <router> outside <port>                    - Set port sebagai interface outside" << std::endl;
+            std::cout << "  nat <router> remove <int_ip> <int_port> <tcp|udp>" << std::endl;
+            std::cout << "  nat <router> clear                             - Clear semua NAT mappings" << std::endl;
+            return;
+        }
+
+        std::string routerName = args[1];
+        auto node = findNode(routerName);
+        if (!node)
+        {
+            std::cout << "Error: Node '" << routerName << "' tidak ditemukan." << std::endl;
+            return;
+        }
+
+        auto router = std::dynamic_pointer_cast<Router>(node);
+        if (!router)
+        {
+            std::cout << "Error: Node '" << routerName << "' bukan router." << std::endl;
+            return;
+        }
+
+        if (args.size() < 3)
+        {
+            // Show NAT
+            router->printNAT();
+            return;
+        }
+
+        std::string subCmd = args[2];
+        std::transform(subCmd.begin(), subCmd.end(), subCmd.begin(), ::tolower);
+
+        if (subCmd == "list")
+        {
+            router->printNAT();
+        }
+        else if (subCmd == "static")
+        {
+            if (args.size() < 8)
+            {
+                std::cout << "Penggunaan: nat <router> static <int_ip> <int_port> <ext_ip> <ext_port> <tcp|udp>" << std::endl;
+                return;
+            }
+
+            std::string intIp = args[3];
+            uint16_t intPort = static_cast<uint16_t>(std::atoi(args[4].c_str()));
+            std::string extIp = args[5];
+            uint16_t extPort = static_cast<uint16_t>(std::atoi(args[6].c_str()));
+            std::string proto = args[7];
+            std::transform(proto.begin(), proto.end(), proto.begin(), ::tolower);
+
+            uint8_t protocol = (proto == "tcp") ? 6 : 17;  // 6 = TCP, 17 = UDP
+
+            router->addStaticNAT(intIp, intPort, extIp, extPort, protocol);
+            std::cout << "Static NAT mapping ditambahkan." << std::endl;
+        }
+        else if (subCmd == "dynamic")
+        {
+            if (args.size() < 7)
+            {
+                std::cout << "Penggunaan: nat <router> dynamic <int_ip> <int_port> <ext_ip> <tcp|udp>" << std::endl;
+                return;
+            }
+
+            std::string intIp = args[3];
+            uint16_t intPort = static_cast<uint16_t>(std::atoi(args[4].c_str()));
+            std::string extIp = args[5];
+            std::string proto = args[6];
+            std::transform(proto.begin(), proto.end(), proto.begin(), ::tolower);
+
+            uint8_t protocol = (proto == "tcp") ? 6 : 17;
+
+            router->addDynamicNAT(intIp, intPort, extIp, protocol);
+            std::cout << "Dynamic NAT mapping ditambahkan." << std::endl;
+        }
+        else if (subCmd == "inside")
+        {
+            if (args.size() < 4)
+            {
+                std::cout << "Penggunaan: nat <router> inside <port>" << std::endl;
+                return;
+            }
+
+            uint32_t port = static_cast<uint32_t>(std::atoi(args[3].c_str()));
+            router->setNATInside(port);
+            std::cout << "Port " << port << " set sebagai NAT inside interface." << std::endl;
+        }
+        else if (subCmd == "outside")
+        {
+            if (args.size() < 4)
+            {
+                std::cout << "Penggunaan: nat <router> outside <port>" << std::endl;
+                return;
+            }
+
+            uint32_t port = static_cast<uint32_t>(std::atoi(args[3].c_str()));
+            router->setNATOutside(port);
+            std::cout << "Port " << port << " set sebagai NAT outside interface." << std::endl;
+        }
+        else if (subCmd == "remove")
+        {
+            if (args.size() < 6)
+            {
+                std::cout << "Penggunaan: nat <router> remove <int_ip> <int_port> <tcp|udp>" << std::endl;
+                return;
+            }
+
+            std::string intIp = args[3];
+            uint16_t intPort = static_cast<uint16_t>(std::atoi(args[4].c_str()));
+            std::string proto = args[5];
+            std::transform(proto.begin(), proto.end(), proto.begin(), ::tolower);
+
+            uint8_t protocol = (proto == "tcp") ? 6 : 17;
+
+            if (router->removeNAT(intIp, intPort, protocol))
+                std::cout << "NAT mapping dihapus." << std::endl;
+            else
+                std::cout << "Error: NAT mapping tidak ditemukan." << std::endl;
+        }
+        else if (subCmd == "clear")
+        {
+            router->clearNAT();
+            std::cout << "Semua NAT mappings di-clear." << std::endl;
+        }
+        else
+        {
+            std::cout << "Error: Sub-command NAT tidak valid." << std::endl;
+        }
+    }
+
     void CLI::cmdSetIp(const std::vector<std::string> &args)
     {
         if (args.size() < 3)
@@ -1826,6 +2124,24 @@ namespace magi
         std::cout << "  <host> traceroute <target_ip>                    - Lacak hop router menuju target" << std::endl;
         std::cout << "  vlan access <switch> <port> <vlan>               - Set port switch sebagai access" << std::endl;
         std::cout << "  vlan trunk <switch> <port> <native_vlan>         - Set port switch sebagai trunk" << std::endl;
+        std::cout << std::endl;
+        std::cout << "Firewall & Security (ACL):" << std::endl;
+        std::cout << "  acl <router> ingress|egress [list]               - Tampilkan ACL rules" << std::endl;
+        std::cout << "  acl <router> ingress|egress add <action> <src_ip> <dst_ip> [proto] [src_port] [dst_port]" << std::endl;
+        std::cout << "    Contoh: acl R1 ingress add deny 192.168.1.0/24 10.0.0.0/8 tcp 80 80" << std::endl;
+        std::cout << "  acl <router> ingress|egress remove <rule_id>    - Hapus ACL rule" << std::endl;
+        std::cout << "  acl <router> ingress|egress clear                - Clear semua ACL rules" << std::endl;
+        std::cout << std::endl;
+        std::cout << "Network Address Translation (NAT):" << std::endl;
+        std::cout << "  nat <router> [list]                              - Tampilkan NAT mappings" << std::endl;
+        std::cout << "  nat <router> static <int_ip> <int_port> <ext_ip> <ext_port> <tcp|udp>" << std::endl;
+        std::cout << "    Contoh: nat R1 static 192.168.1.100 80 203.0.113.1 8080 tcp" << std::endl;
+        std::cout << "  nat <router> dynamic <int_ip> <int_port> <ext_ip> <tcp|udp>" << std::endl;
+        std::cout << "    Contoh: nat R1 dynamic 192.168.1.100 443 203.0.113.1 tcp" << std::endl;
+        std::cout << "  nat <router> inside <port>                       - Set port sebagai inside interface" << std::endl;
+        std::cout << "  nat <router> outside <port>                      - Set port sebagai outside interface" << std::endl;
+        std::cout << "  nat <router> remove <int_ip> <int_port> <tcp|udp> - Hapus NAT mapping" << std::endl;
+        std::cout << "  nat <router> clear                               - Clear semua NAT mappings" << std::endl;
         std::cout << std::endl;
         std::cout << "Manajemen Topologi:" << std::endl;
         std::cout << "  create <name> <host|switch|router> [jumlah_port] - Membuat node baru" << std::endl;

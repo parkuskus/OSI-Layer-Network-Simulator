@@ -1,6 +1,7 @@
 #ifndef MAGI_LAYER7_DHCP_SERVER_HPP
 #define MAGI_LAYER7_DHCP_SERVER_HPP
 
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <map>

@@ -247,6 +247,160 @@ void Router::printArpCache() const {
     }
 }
 
+// ACL Methods
+int Router::addIngressACLRule(const ACLRule& rule) {
+    return aclIngress.addRule(rule);
+}
+
+int Router::addEgressACLRule(const ACLRule& rule) {
+    return aclEgress.addRule(rule);
+}
+
+bool Router::removeIngressACLRule(int ruleId) {
+    return aclIngress.removeRule(ruleId);
+}
+
+bool Router::removeEgressACLRule(int ruleId) {
+    return aclEgress.removeRule(ruleId);
+}
+
+void Router::clearIngressACL() {
+    aclIngress.clearRules();
+}
+
+void Router::clearEgressACL() {
+    aclEgress.clearRules();
+}
+
+void Router::printIngressACL() const {
+    aclIngress.printRules();
+}
+
+void Router::printEgressACL() const {
+    aclEgress.printRules();
+}
+
+// NAT Methods
+int Router::addStaticNAT(const std::string& internalIp, uint16_t internalPort,
+                        const std::string& externalIp, uint16_t externalPort,
+                        uint8_t protocol) {
+    return natTable.addStaticMapping(internalIp, internalPort, externalIp, externalPort, protocol);
+}
+
+int Router::addDynamicNAT(const std::string& internalIp, uint16_t internalPort,
+                         const std::string& externalIp,
+                         uint8_t protocol) {
+    return natTable.addDynamicMapping(internalIp, internalPort, externalIp, protocol);
+}
+
+bool Router::removeNAT(const std::string& internalIp, uint16_t internalPort, uint8_t protocol) {
+    return natTable.removeMapping(internalIp, internalPort, protocol);
+}
+
+void Router::clearNAT() {
+    natTable.clearMappings();
+}
+
+void Router::printNAT() const {
+    natTable.printMappings();
+}
+
+void Router::setNATInside(uint32_t portNumber) {
+    natInsideInterfaces.insert(portNumber);
+    natOutsideInterfaces.erase(portNumber);
+}
+
+void Router::setNATOutside(uint32_t portNumber) {
+    natOutsideInterfaces.insert(portNumber);
+    natInsideInterfaces.erase(portNumber);
+}
+
+// Helper methods for ACL and NAT
+bool Router::extractPortsFromPayload(const std::vector<uint8_t>& payload, uint8_t protocol, uint16_t& srcPort, uint16_t& dstPort) const {
+    // Only TCP (6) and UDP (17) have port numbers
+    if (protocol != 6 && protocol != 17) {
+        srcPort = 0;
+        dstPort = 0;
+        return false;
+    }
+
+    // TCP and UDP both have the same port format at the start:
+    // Bytes 0-1: source port (network byte order)
+    // Bytes 2-3: destination port (network byte order)
+    if (payload.size() < 4) {
+        srcPort = 0;
+        dstPort = 0;
+        return false;
+    }
+
+    srcPort = static_cast<uint16_t>((static_cast<uint16_t>(payload[0]) << 8) | payload[1]);
+    dstPort = static_cast<uint16_t>((static_cast<uint16_t>(payload[2]) << 8) | payload[3]);
+    return true;
+}
+
+bool Router::applyIngressACL(const IPv4Packet& packet, uint8_t protocol, uint16_t srcPort, uint16_t dstPort) const {
+    ACLProtocol aclProto = ACLProtocol::ANY;
+    if (protocol == 6) aclProto = ACLProtocol::TCP;
+    else if (protocol == 17) aclProto = ACLProtocol::UDP;
+    else if (protocol == 1) aclProto = ACLProtocol::ICMP;
+    
+    return aclIngress.checkPacket(packet.srcIp, packet.dstIp, aclProto, srcPort, dstPort);
+}
+
+bool Router::applyEgressACL(const IPv4Packet& packet, uint8_t protocol, uint16_t srcPort, uint16_t dstPort) const {
+    ACLProtocol aclProto = ACLProtocol::ANY;
+    if (protocol == 6) aclProto = ACLProtocol::TCP;
+    else if (protocol == 17) aclProto = ACLProtocol::UDP;
+    else if (protocol == 1) aclProto = ACLProtocol::ICMP;
+    
+    return aclEgress.checkPacket(packet.srcIp, packet.dstIp, aclProto, srcPort, dstPort);
+}
+
+IPv4Packet Router::applyNATTranslation(const IPv4Packet& packet, bool isOutgoing, uint32_t ingressPort) {
+    IPv4Packet result = packet;
+    
+    // Only apply NAT for TCP and UDP
+    if (packet.protocol != 6 && packet.protocol != 17) {
+        return result;
+    }
+
+    // Extract ports from payload
+    uint16_t srcPort, dstPort;
+    if (!extractPortsFromPayload(packet.payload, packet.protocol, srcPort, dstPort)) {
+        return result;
+    }
+
+    if (isOutgoing) {
+        // Outgoing packet: internal IP:port -> external IP:port
+        if (natInsideInterfaces.find(ingressPort) != natInsideInterfaces.end()) {
+            std::string externalIp;
+            uint16_t externalPort;
+            if (natTable.lookupInternal(packet.srcIp, srcPort, packet.protocol, externalIp, externalPort)) {
+                // NAT translation found - rewrite source IP and port
+                result.srcIp = externalIp;
+                // Rewrite source port in payload (bytes 0-1)
+                result.payload[0] = static_cast<uint8_t>((externalPort >> 8) & 0xFF);
+                result.payload[1] = static_cast<uint8_t>(externalPort & 0xFF);
+            }
+        }
+    } else {
+        // Incoming packet: external IP:port -> internal IP:port
+        if (natOutsideInterfaces.find(ingressPort) != natOutsideInterfaces.end()) {
+            std::string internalIp;
+            uint16_t internalPort;
+            if (natTable.lookupExternal(packet.dstIp, dstPort, packet.protocol, internalIp, internalPort)) {
+                // Return NAT translation found - rewrite destination IP and port
+                result.dstIp = internalIp;
+                // Rewrite destination port in payload (bytes 2-3)
+                result.payload[2] = static_cast<uint8_t>((internalPort >> 8) & 0xFF);
+                result.payload[3] = static_cast<uint8_t>(internalPort & 0xFF);
+            }
+        }
+    }
+
+    return result;
+}
+
 void Router::sendArpRequest(uint32_t outPortNumber, int outVlanId, const std::string& targetIp) {
     std::shared_ptr<Interface> iface = getInterface(outPortNumber);
     const RouterLogicalInterface* logicalInterface = getLogicalInterface(outPortNumber, outVlanId);
@@ -456,6 +610,18 @@ void Router::handleIpv4Frame(Interface* incomingInterface, const EthernetFrame& 
     const uint32_t ingressPort = incomingInterface->getPortNumber();
     arpCache[makeArpKey(ingressPort, frame.vlanId, packet.srcIp)] = frame.srcMac;
 
+    // Extract port information for ACL and NAT
+    uint16_t srcPort = 0, dstPort = 0;
+    extractPortsFromPayload(packet.payload, packet.protocol, srcPort, dstPort);
+
+    // Apply ingress ACL
+    if (!applyIngressACL(packet, packet.protocol, srcPort, dstPort)) {
+        return;  // Packet denied by ingress ACL
+    }
+
+    // Apply NAT translation for incoming packets
+    packet = applyNATTranslation(packet, false, ingressPort);
+
     const RouterLogicalInterface* localInterface = findInterfaceByIp(packet.dstIp);
     if (localInterface != nullptr) {
         if (packet.protocol != 1) {
@@ -492,6 +658,21 @@ void Router::handleIpv4Frame(Interface* incomingInterface, const EthernetFrame& 
 
     IPv4Packet forwarded = packet;
     forwarded.ttl = static_cast<uint8_t>(forwarded.ttl - 1);
+    
+    // Re-extract ports after potential NAT translation
+    extractPortsFromPayload(forwarded.payload, forwarded.protocol, srcPort, dstPort);
+    
+    // Apply NAT translation for outgoing packets
+    forwarded = applyNATTranslation(forwarded, true, route.outPortNumber);
+    
+    // Re-extract ports after NAT translation to get updated values
+    extractPortsFromPayload(forwarded.payload, forwarded.protocol, srcPort, dstPort);
+    
+    // Apply egress ACL check
+    if (!applyEgressACL(forwarded, forwarded.protocol, srcPort, dstPort)) {
+        return;  // Packet denied by egress ACL
+    }
+    
     forwarded.updateChecksum();
 
     const std::string nextHopIp = route.nextHopIp.empty() ? forwarded.dstIp : route.nextHopIp;
