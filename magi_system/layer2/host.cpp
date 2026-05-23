@@ -133,7 +133,7 @@ namespace
                                                   fragment.protocol,
                                                   fragment.identification);
         ReassemblyBuffer &buffer = gReassemblyBuffers[key];
-                            buffer.lastUpdated = now;
+        buffer.lastUpdated = now;
         const uint32_t byteOffset = static_cast<uint32_t>(fragment.fragmentOffset) * 8u;
         buffer.fragmentsByOffset[byteOffset] = fragment.payload;
 
