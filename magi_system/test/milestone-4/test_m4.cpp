@@ -10,7 +10,12 @@ Milestone 4 socket wrapper smoke test
 #include "layer7/dhcp_client.hpp"
 #include "layer7/dhcp_server.hpp"
 #include "layer7/magi_socket.hpp"
+#include "layer7/dns_client.hpp"
+#include "layer7/dns_server.hpp"
+#include "layer7/http_client.hpp"
+#include "layer7/http_server.hpp"
 
+#include <memory>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -75,11 +80,11 @@ bool runMilestone4Tests()
     magi::Link::create(dhcpServerHost.getInterface(1), dhcpClientHost.getInterface(1));
 
     std::string assignedIp;
-    std::string dhcpLog = magi_test::captureStdout([&]() {
+    std::string dhcpLog = magi_test::captureStdout([&]()
+                                                   {
         dhcpServerHost.startDhcpServer();
         assignedIp = magi::DHCPClient::discover(&dhcpClientHost, 2000, 3);
-        dhcpServerHost.stopDhcpServer();
-    });
+        dhcpServerHost.stopDhcpServer(); });
 
     if (assignedIp.empty())
     {
@@ -92,6 +97,35 @@ bool runMilestone4Tests()
     magi_test::expect(stats, magi_test::contains(dhcpLog, "Received DISCOVER"), "DHCP log records OFFER path");
     magi_test::expect(stats, magi_test::contains(dhcpLog, "Received REQUEST"), "DHCP log records ACK path");
     magi_test::expect(stats, magi_test::contains(dhcpLog, "Lease acquired"), "DHCP log records successful lease");
+
+    // --- DNS -> HTTP integration (inlined into the same stats) ---
+    std::cout << std::endl
+              << "Running Milestone 4 DNS->HTTP integration test" << std::endl;
+
+    auto server = std::make_shared<magi::Host>("HS", "192.168.1.11/24", "192.168.1.1");
+    auto client = std::make_shared<magi::Host>("HC", "192.168.1.10/24", "192.168.1.1");
+    server->getInterface(1)->setMacAddress("00:00:00:00:50:01");
+    client->getInterface(1)->setMacAddress("00:00:00:00:50:02");
+    magi::Link::create(server->getInterface(1), client->getInterface(1));
+
+    server->startDnsServer();
+    server->startHttpServer("index.html");
+
+    std::vector<std::shared_ptr<magi::Host>> allHosts = {server, client};
+
+    std::string out = magi_test::captureStdout([&]()
+                                               { magi::HTTPClient::get(client, "www.HS.com", allHosts); });
+
+    bool dnsQueried = magi_test::contains(out, "[DNS] QUERY");
+    bool httpReceived = magi_test::contains(out, "HTTP/1.1 200") || magi_test::contains(out, "[HTTP Client] Menerima HTTP Response");
+
+    magi_test::expect(stats, dnsQueried, "DNS server received a query from client");
+    magi_test::expect(stats, httpReceived, "HTTP client received a response after DNS resolution");
+
+    server->stopHttpServer();
+    server->stopDnsServer();
+
+    // --- end DNS->HTTP integration ---
 
     std::cout << std::endl
               << "Milestone 4 summary: " << (stats.checks - stats.failed)
