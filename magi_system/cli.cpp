@@ -968,19 +968,47 @@ namespace magi
     {
         if (args.size() < 3)
         {
-            std::cout << "Penggunaan: link <device1> <device2> [delay_ms]" << std::endl;
+            std::cout << "Penggunaan: link <device1> <device2> [delay_ms] [mtu]" << std::endl;
             std::cout << "  Contoh: link H1 SW1:1" << std::endl;
-            std::cout << "  Contoh: link SW1:24 R1:1 10" << std::endl;
+            std::cout << "  Contoh: link SW1:24 R1:1 10 1400" << std::endl;
             return;
         }
 
         std::string endpoint1 = args[1];
         std::string endpoint2 = args[2];
         uint32_t delay = 0;
+        uint32_t mtu = 1500;
 
         if (args.size() >= 4)
         {
-            delay = std::stoul(args[3]);
+            try
+            {
+                delay = std::stoul(args[3]);
+            }
+            catch (...)
+            {
+                std::cout << "Error: delay_ms tidak valid." << std::endl;
+                return;
+            }
+        }
+
+        if (args.size() >= 5)
+        {
+            try
+            {
+                mtu = std::stoul(args[4]);
+            }
+            catch (...)
+            {
+                std::cout << "Error: mtu tidak valid." << std::endl;
+                return;
+            }
+        }
+
+        if (mtu < 68)
+        {
+            std::cout << "Error: mtu terlalu kecil. Gunakan nilai >= 68." << std::endl;
+            return;
         }
 
         std::string nodeAName, nodeBName;
@@ -1028,7 +1056,7 @@ namespace magi
             return;
         }
 
-        auto link = Link::create(ifaceA, ifaceB, delay);
+        auto link = Link::create(ifaceA, ifaceB, delay, mtu);
 
         LinkConnection conn;
         conn.nodeAName = nodeAName;
@@ -1036,6 +1064,7 @@ namespace magi
         conn.nodeBName = nodeBName;
         conn.portB = portB;
         conn.delay = delay;
+        conn.mtu = mtu;
         conn.link = link;
         connections.push_back(conn);
 
@@ -1043,6 +1072,10 @@ namespace magi
         if (delay > 0)
         {
             std::cout << " (delay: " << delay << " ms)";
+        }
+        if (mtu != 1500)
+        {
+            std::cout << " (mtu: " << mtu << " bytes)";
         }
         std::cout << "." << std::endl;
     }
@@ -1103,9 +1136,22 @@ namespace magi
         {
             std::cout << "  " << conn.nodeAName << ":" << conn.portA
                       << " <-> " << conn.nodeBName << ":" << conn.portB;
-            if (conn.delay > 0)
+            if (conn.delay > 0 || conn.mtu != 1500)
             {
-                std::cout << " [" << conn.delay << " ms]";
+                std::cout << " [";
+                if (conn.delay > 0)
+                {
+                    std::cout << conn.delay << " ms";
+                }
+                if (conn.delay > 0 && conn.mtu != 1500)
+                {
+                    std::cout << ", ";
+                }
+                if (conn.mtu != 1500)
+                {
+                    std::cout << "mtu " << conn.mtu;
+                }
+                std::cout << "]";
             }
             std::cout << std::endl;
         }
@@ -1189,6 +1235,7 @@ namespace magi
             }
             file << "\"],\n";
             file << "      \"delay\": " << conn.delay << "\n";
+            file << "      ,\"mtu\": " << conn.mtu << "\n";
             file << "    }";
         }
         file << "\n  ]\n";
@@ -1401,6 +1448,7 @@ namespace magi
                 {
                     std::vector<std::string> endpoints;
                     uint32_t delay = 0;
+                    uint32_t mtu = 1500;
 
                     while (std::getline(file, line) && line.find("}") == std::string::npos)
                     {
@@ -1435,12 +1483,18 @@ namespace magi
                             if (!delayStr.empty())
                                 delay = std::stoul(delayStr);
                         }
+                        else if (line.find("\"mtu\"") != std::string::npos)
+                        {
+                            std::string mtuStr = extractJsonValue(line, "mtu");
+                            if (!mtuStr.empty())
+                                mtu = std::stoul(mtuStr);
+                        }
                     }
 
                     if (endpoints.size() >= 2)
                     {
                         // Gunakan cmdLink untuk membuat koneksi
-                        std::vector<std::string> linkArgs = {"link", endpoints[0], endpoints[1], std::to_string(delay)};
+                        std::vector<std::string> linkArgs = {"link", endpoints[0], endpoints[1], std::to_string(delay), std::to_string(mtu)};
                         cmdLink(linkArgs);
                     }
                 }
@@ -1852,7 +1906,7 @@ namespace magi
             std::string proto = args[7];
             std::transform(proto.begin(), proto.end(), proto.begin(), ::tolower);
 
-            uint8_t protocol = (proto == "tcp") ? 6 : 17;  // 6 = TCP, 17 = UDP
+            uint8_t protocol = (proto == "tcp") ? 6 : 17; // 6 = TCP, 17 = UDP
 
             router->addStaticNAT(intIp, intPort, extIp, extPort, protocol);
             std::cout << "Static NAT mapping ditambahkan." << std::endl;

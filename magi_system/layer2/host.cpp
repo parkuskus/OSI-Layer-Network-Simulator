@@ -1,5 +1,6 @@
 #include "host.hpp"
 #include "core/interface.hpp"
+#include "core/link.hpp"
 #include "layer2/ethernet.hpp"
 #include "layer7/http_server.hpp"
 #include "layer7/dhcp_server.hpp"
@@ -21,7 +22,140 @@ namespace
     const short kEtherTypeArp = static_cast<short>(0x0806);
     const std::string kBroadcastMac = "ff:ff:ff:ff:ff:ff";
     const char kPingPayloadPrefix[] = "MAGI_ECHO_";
+    const uint32_t kDefaultLinkMtu = 1500;
     uint16_t gNextEchoIdentifier = 1;
+
+    struct ReassemblyBuffer
+    {
+        std::map<uint32_t, std::vector<uint8_t>> fragmentsByOffset;
+        size_t expectedPayloadSize = 0;
+        bool finalFragmentSeen = false;
+    };
+
+    std::map<std::string, ReassemblyBuffer> gReassemblyBuffers;
+
+    std::string makeReassemblyKey(const magi::Host *host,
+                                  const std::string &srcIp,
+                                  const std::string &dstIp,
+                                  uint8_t protocol,
+                                  uint16_t identification)
+    {
+        std::ostringstream oss;
+        oss << reinterpret_cast<uintptr_t>(host) << ':'
+            << srcIp << ':' << dstIp << ':'
+            << static_cast<int>(protocol) << ':' << identification;
+        return oss.str();
+    }
+
+    uint32_t getLinkMtu(const std::shared_ptr<magi::Interface> &iface)
+    {
+        if (iface && iface->getLink())
+        {
+            return iface->getLink()->getMtu();
+        }
+        return kDefaultLinkMtu;
+    }
+
+    std::vector<magi::IPv4Packet> fragmentIpv4Packet(const magi::IPv4Packet &packet, uint32_t mtu)
+    {
+        const size_t headerSize = static_cast<size_t>(packet.ihl) * 4;
+        const size_t maxPayloadPerFragment = (mtu > headerSize)
+                                                 ? ((static_cast<size_t>(mtu) - headerSize) / 8) * 8
+                                                 : 0;
+
+        if (maxPayloadPerFragment == 0 || packet.payload.size() <= maxPayloadPerFragment)
+        {
+            return std::vector<magi::IPv4Packet>{packet};
+        }
+
+        std::vector<magi::IPv4Packet> fragments;
+        size_t offset = 0;
+        while (offset < packet.payload.size())
+        {
+            const size_t remaining = packet.payload.size() - offset;
+            size_t fragmentPayloadSize = remaining;
+            if (remaining > maxPayloadPerFragment)
+            {
+                fragmentPayloadSize = maxPayloadPerFragment;
+            }
+
+            magi::IPv4Packet fragment = packet;
+            fragment.flags = static_cast<uint8_t>(packet.flags & static_cast<uint8_t>(~0x1));
+            if (remaining > fragmentPayloadSize)
+            {
+                fragment.flags = static_cast<uint8_t>(fragment.flags | 0x1);
+            }
+            fragment.fragmentOffset = static_cast<uint16_t>(offset / 8);
+            fragment.payload.assign(packet.payload.begin() + static_cast<long>(offset),
+                                    packet.payload.begin() + static_cast<long>(offset + fragmentPayloadSize));
+            fragment.updateChecksum();
+            fragments.push_back(fragment);
+
+            offset += fragmentPayloadSize;
+        }
+
+        return fragments;
+    }
+
+    bool tryReassembleIpv4Packet(const magi::Host *host,
+                                 const magi::IPv4Packet &fragment,
+                                 magi::IPv4Packet &outPacket)
+    {
+        if (fragment.fragmentOffset == 0 && (fragment.flags & 0x1) == 0)
+        {
+            outPacket = fragment;
+            return true;
+        }
+
+        const std::string key = makeReassemblyKey(host,
+                                                  fragment.srcIp,
+                                                  fragment.dstIp,
+                                                  fragment.protocol,
+                                                  fragment.identification);
+        ReassemblyBuffer &buffer = gReassemblyBuffers[key];
+        const uint32_t byteOffset = static_cast<uint32_t>(fragment.fragmentOffset) * 8u;
+        buffer.fragmentsByOffset[byteOffset] = fragment.payload;
+
+        if ((fragment.flags & 0x1) == 0)
+        {
+            buffer.finalFragmentSeen = true;
+            buffer.expectedPayloadSize = static_cast<size_t>(byteOffset + fragment.payload.size());
+        }
+
+        if (!buffer.finalFragmentSeen)
+        {
+            return false;
+        }
+
+        size_t expectedOffset = 0;
+        std::vector<uint8_t> payload;
+        payload.reserve(buffer.expectedPayloadSize);
+
+        for (std::map<uint32_t, std::vector<uint8_t>>::const_iterator it = buffer.fragmentsByOffset.begin();
+             it != buffer.fragmentsByOffset.end();
+             ++it)
+        {
+            if (it->first != expectedOffset)
+            {
+                return false;
+            }
+            payload.insert(payload.end(), it->second.begin(), it->second.end());
+            expectedOffset += it->second.size();
+        }
+
+        if (expectedOffset != buffer.expectedPayloadSize)
+        {
+            return false;
+        }
+
+        outPacket = fragment;
+        outPacket.flags = 0;
+        outPacket.fragmentOffset = 0;
+        outPacket.payload = payload;
+        outPacket.updateChecksum();
+        gReassemblyBuffers.erase(key);
+        return true;
+    }
 
     std::string formatRtt(double milliseconds)
     {
@@ -222,7 +356,15 @@ namespace magi
         }
 
         const std::string nextHopIp = resolveNextHop(packet.dstIp);
-        const std::vector<uint8_t> ipv4Bytes = packet.toBytes();
+        const uint32_t linkMtu = getLinkMtu(iface);
+        const std::vector<IPv4Packet> packetsToSend = fragmentIpv4Packet(packet, linkMtu);
+
+        if (packetsToSend.size() > 1)
+        {
+            std::cout << "[Host] " << name << " memecah IPv4 packet menjadi " << packetsToSend.size()
+                      << " fragment (MTU " << linkMtu << ")" << std::endl;
+        }
+
         // Special-case: broadcast IP -> send as Ethernet broadcast without ARP
         if (packet.dstIp == "255.255.255.255")
         {
@@ -232,14 +374,17 @@ namespace magi
                 return false;
             }
 
-            EthernetFrame frame;
-            frame.dstMac = "ff:ff:ff:ff:ff:ff";
-            frame.srcMac = iface->getMacAddress();
-            frame.etherType = kEtherTypeIpv4;
-            frame.vlanId = iputil::kUntaggedVlan;
-            frame.payload = ipv4Bytes;
-            std::cout << "[Host] " << name << " sending IPv4 broadcast " << packet.srcIp << "->" << packet.dstIp << " via MAC " << frame.srcMac << std::endl;
-            iface->send(frame.toBytes());
+            for (const auto &fragment : packetsToSend)
+            {
+                EthernetFrame frame;
+                frame.dstMac = "ff:ff:ff:ff:ff:ff";
+                frame.srcMac = iface->getMacAddress();
+                frame.etherType = kEtherTypeIpv4;
+                frame.vlanId = iputil::kUntaggedVlan;
+                frame.payload = fragment.toBytes();
+                std::cout << "[Host] " << name << " sending IPv4 broadcast " << fragment.srcIp << "->" << fragment.dstIp << " via MAC " << frame.srcMac << std::endl;
+                iface->send(frame.toBytes());
+            }
             return true;
         }
 
@@ -258,19 +403,25 @@ namespace magi
         const std::map<std::string, std::string>::const_iterator cacheIt = arpCache.table.find(nextHopIp);
         if (cacheIt != arpCache.table.end())
         {
-            EthernetFrame frame;
-            frame.dstMac = cacheIt->second;
-            frame.srcMac = iface->getMacAddress();
-            frame.etherType = kEtherTypeIpv4;
-            frame.vlanId = iputil::kUntaggedVlan;
-            frame.payload = ipv4Bytes;
-            std::cout << "[Host] " << name << " sending IPv4 unicast " << packet.srcIp << "->" << packet.dstIp << " dstMac=" << frame.dstMac << std::endl;
-            iface->send(frame.toBytes());
+            for (const auto &fragment : packetsToSend)
+            {
+                EthernetFrame frame;
+                frame.dstMac = cacheIt->second;
+                frame.srcMac = iface->getMacAddress();
+                frame.etherType = kEtherTypeIpv4;
+                frame.vlanId = iputil::kUntaggedVlan;
+                frame.payload = fragment.toBytes();
+                std::cout << "[Host] " << name << " sending IPv4 unicast " << fragment.srcIp << "->" << fragment.dstIp << " dstMac=" << frame.dstMac << std::endl;
+                iface->send(frame.toBytes());
+            }
             return true;
         }
 
         std::vector<std::vector<uint8_t>> &pending = arpCache.queue[nextHopIp];
-        pending.push_back(ipv4Bytes);
+        for (const auto &fragment : packetsToSend)
+        {
+            pending.push_back(fragment.toBytes());
+        }
 
         if (pending.size() > 1)
         {
@@ -543,6 +694,24 @@ namespace magi
         if (packet.dstIp != getPrimaryIp() && packet.dstIp != "255.255.255.255" && packet.dstIp != "0.0.0.0")
         {
             return;
+        }
+
+        IPv4Packet reassembledPacket;
+        if (!tryReassembleIpv4Packet(this, packet, reassembledPacket))
+        {
+            std::cout << "[Host] " << name << " menyimpan fragment IPv4 id=" << packet.identification
+                      << " offset=" << packet.fragmentOffset << " MF=" << static_cast<int>(packet.flags & 0x1) << std::endl;
+            return;
+        }
+
+        packet = reassembledPacket;
+        if (packet.fragmentOffset == 0 && packet.flags == 0 && packet.payload.size() != 0)
+        {
+            if (frame.payload.size() != packet.payload.size() + static_cast<size_t>(packet.ihl) * 4)
+            {
+                std::cout << "[Host] " << name << " berhasil reassembly IPv4 id=" << packet.identification
+                          << " size=" << packet.payload.size() << std::endl;
+            }
         }
 
         // ICMP handling

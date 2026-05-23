@@ -20,6 +20,7 @@ namespace magi
         std::string nodeBName;
         uint32_t portB;
         uint32_t delay;
+        uint32_t mtu;
         std::shared_ptr<Link> link;
     };
 
