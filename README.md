@@ -190,29 +190,23 @@ Umum
 ## Contoh Penggunaan
 
 ```
-
 Magi> create H1 host
-
 Host 'H1' berhasil dibuat.
 
 
 Magi> create H2 host
-
 Host 'H2' berhasil dibuat.
 
 
 Magi> create SW1 switch 4
-
 Switch 'SW1' dengan 4 port berhasil dibuat.
 
 
 Magi> link H1 SW1:1
-
 Berhasil menghubungkan H1 dengan SW1:1.
 
 
 Magi> link H2 SW1:2
-
 Berhasil menghubungkan H2 dengan SW1:2.
 
 
@@ -221,28 +215,21 @@ Magi> topology
 === TOPOLOGY ===
 
 Nodes:
-
   H1 (host)
-
   H2 (host)
-
   SW1 (switch)
 
 
 Links:
-
   H1:1 <-> SW1:1
-
   H2:1 <-> SW1:2
 
 
 Magi> save my_topology.json
-
 Topologi berhasil disimpan ke 'my_topology.json'.
 
 
 Magi> exit
-
 Menghentikan Magi System Simulator...
 
 ```
@@ -254,65 +241,36 @@ Menghentikan Magi System Simulator...
 {
 
   "hosts": [
-
     {
-
       "name": "H1",
-
       "ip_address": "192.168.1.10/24",
-
       "default_gateway": "192.168.1.1"
-
     }
-
   ],
-
   "switches": [
-
     {
-
       "name": "SW1",
-
       "num_ports": 24,
-
       "vlans": []
-
     }
-
   ],
-
   "routers": [
-
     {
-
       "name": "R1",
-
       "interfaces": [],
-
       "routing_table": []
-
     }
-
   ],
-
   "links": [
-
     {
-
       "endpoints": ["H1", "SW1:1"],
-
       "delay": 0
-
     }
-
   ]
-
 }
-
 ```
 
 ## Milestones
-
 Centang sesuai implementasi yang sudah selesai.
 
 * [X] **Milestone 0: Fondasi Simulasi** - Pembuatan kelas fisik (*Interface*, *Link*), struktur dasar *Packet* yang mendukung konversi ke *byte* mentah, dan memuat topologi JSON.
@@ -323,7 +281,6 @@ Centang sesuai implementasi yang sudah selesai.
 * [ ] **Milestone 5: Fitur Bonus** - [Sebutkan fitur lanjutan yang kelompok Anda targetkan, misal: *Topology Visualizer*, *IP Fragmentation*, *ACL*, *NAT/PAT*, *RIPv2*, atau *Asynchronous Engine*].
 
 ## Pembagian Tugas
-
 * **Muhammad Aufar Rizqi Kusuma (13524061):** Milestone 4
 * **Kurt Mikhael Purba (13524065):** Milestone 0
 * **Bryan Pratama Putra Hendra (13524067):** Milestone 2
