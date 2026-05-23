@@ -1,0 +1,174 @@
+=== MAGI System Demo: DNS -> HTTP (integration run) ===
+Date: 2026-05-23
+
+Commands run:
+- load topology.json
+- H2 dns_server start
+- H2 http_server start index.html
+- H1 http_get www.h2.com
+
+Terminal output:
+
+Magi> load topology.json
+Berhasil menghubungkan H1 dengan SW1:1 (delay: 5 ms).
+Berhasil menghubungkan H2 dengan SW1:2 (delay: 5 ms).
+Topologi berhasil dimuat dari 'topology.json'.
+
+Magi> H2 dns_server start
+[DNS] Server started on 192.168.1.11:53
+
+Magi> H2 http_server start index.html
+[TCP] State transition: CLOSED -> LISTEN
+[HTTP Server] Server berjalan di 192.168.1.11/24:80 (menyajikan: index.html)
+
+Magi> H1 http_get www.h2.com
+[Host] H1 sending IPv4 broadcast 192.168.1.10->255.255.255.255 via MAC 72:cd:44:04:cd:99
+[Host] H2 received IPv4 frame: 192.168.1.10 -> 255.255.255.255, ether src=72:cd:44:04:cd:99 dst=ff:ff:ff:ff:ff:ff
+[DNS] QUERY www.h2.com -> 192.168.1.11
+[Host] H2 sending IPv4 unicast 192.168.1.11->192.168.1.10 dstMac=72:cd:44:04:cd:99
+[Host] H1 received IPv4 frame: 192.168.1.11 -> 192.168.1.10, ether src=85:29:b0:3e:8f:58 dst=72:cd:44:04:cd:99
+[HTTP Client] Memulai HTTP GET ke H2 (192.168.1.11:80) dengan path '/'...
+[TCP] updateChecksum 192.168.1.10->192.168.1.11 computed=0x67b9 payloadLen=0
+[TCP] State transition: CLOSED -> SYN_SENT
+[TCP] Initiating connection: 192.168.1.10:49152 -> 192.168.1.11:80
+[Host] H1 sending IPv4 unicast 192.168.1.10->192.168.1.11 dstMac=85:29:b0:3e:8f:58
+[Host] H2 received IPv4 frame: 192.168.1.10 -> 192.168.1.11, ether src=72:cd:44:04:cd:99 dst=85:29:b0:3e:8f:58
+[TCP] validateChecksum 192.168.1.10->192.168.1.11 stored=0x67b9 computed=0x67b9 ok=1
+[Host] H2 TCP dispatch key=192.168.1.11:80:192.168.1.10:49152
+[TCP] Processing segment: flags=0x2 seq=1013 ack=0
+[TCP] Received SYN
+[TCP] updateChecksum 192.168.1.11->192.168.1.10 computed=0x63cc payloadLen=0
+[TCP] respondToSyn: localIP=192.168.1.11 remoteIP=192.168.1.10
+[TCP] updateChecksum 192.168.1.11->192.168.1.10 computed=0x5fd6 payloadLen=0
+[TCP] State transition: LISTEN -> SYN_RCVD
+[TCP] Responding with SYN-ACK to incoming connection
+[TCP] updateChecksum 192.168.1.11->192.168.1.10 computed=0x5fd6 payloadLen=0
+[Host] H2 sending IPv4 unicast 192.168.1.11->192.168.1.10 dstMac=72:cd:44:04:cd:99
+[Host] H1 received IPv4 frame: 192.168.1.11 -> 192.168.1.10, ether src=85:29:b0:3e:8f:58 dst=72:cd:44:04:cd:99
+[TCP] validateChecksum 192.168.1.11->192.168.1.10 stored=0x5fd6 computed=0x5fd6 ok=1
+[Host] H1 TCP dispatch key=192.168.1.10:49152:192.168.1.11:80
+[Host] H1 matched active socket for key=192.168.1.10:49152:192.168.1.11:80
+[TCP] Processing segment: flags=0x12 seq=994 ack=1014
+[TCP] Received SYN-ACK
+[TCP] updateChecksum 192.168.1.10->192.168.1.11 computed=0x6438 payloadLen=0
+[TCP] updateChecksum 192.168.1.10->192.168.1.11 computed=0x6055 payloadLen=0
+[TCP] State transition: SYN_SENT -> ESTABLISHED
+[TCP] Connection established! State: ESTABLISHED
+[TCP] updateChecksum 192.168.1.10->192.168.1.11 computed=0x6055 payloadLen=0
+[Host] H1 sending IPv4 unicast 192.168.1.10->192.168.1.11 dstMac=85:29:b0:3e:8f:58
+[Host] H2 received IPv4 frame: 192.168.1.10 -> 192.168.1.11, ether src=72:cd:44:04:cd:99 dst=85:29:b0:3e:8f:58
+[TCP] validateChecksum 192.168.1.10->192.168.1.11 stored=0x6055 computed=0x6055 ok=1
+[Host] H2 TCP dispatch key=192.168.1.11:80:192.168.1.10:49152
+[TCP] Processing segment: flags=0x10 seq=1014 ack=995
+[TCP] State transition: SYN_RCVD -> ESTABLISHED
+[TCP] Received ACK, connection established
+[HTTP Client] Mengirimkan HTTP Request:
+GET / HTTP/1.1
+Host: www.h2.com
+Connection: close
+
+
+[TCP] updateChecksum 192.168.1.10->192.168.1.11 computed=0x1780 payloadLen=55
+[TCP] Sending 55 bytes of data
+[MagiSocket] sendTcpSegment: localIp=192.168.1.10 remoteIp=192.168.1.11 localPort=49152 remotePort=80
+[Host] H1 sending IPv4 unicast 192.168.1.10->192.168.1.11 dstMac=85:29:b0:3e:8f:58
+[Host] H2 received IPv4 frame: 192.168.1.10 -> 192.168.1.11, ether src=72:cd:44:04:cd:99 dst=85:29:b0:3e:8f:58
+[TCP] validateChecksum 192.168.1.10->192.168.1.11 stored=0x1780 computed=0x1780 ok=1
+[Host] H2 TCP dispatch key=192.168.1.11:80:192.168.1.10:49152
+[Host] H2 matched active socket for key=192.168.1.11:80:192.168.1.10:49152
+[TCP] Processing segment: flags=0x18 seq=1014 ack=0
+[TCP] Added in-order segment to receive buffer (size: 55)
+[TCP] Accepted data segment
+[HTTP Server] Menerima koneksi dari 192.168.1.10:49152
+[HTTP Server] Menerima HTTP Request:
+GET / HTTP/1.1
+Host: www.h2.com
+Connection: close
+
+
+[TCP] updateChecksum 192.168.1.11->192.168.1.10 computed=0xbaf5 payloadLen=1614
+[TCP] Sending 1614 bytes of data
+[Host] H2 sending IPv4 unicast 192.168.1.11->192.168.1.10 dstMac=72:cd:44:04:cd:99
+[Host] H1 received IPv4 frame: 192.168.1.11 -> 192.168.1.10, ether src=85:29:b0:3e:8f:58 dst=72:cd:44:04:cd:99
+[TCP] validateChecksum 192.168.1.11->192.168.1.10 stored=0xbaf5 computed=0xbaf5 ok=1
+[Host] H1 TCP dispatch key=192.168.1.10:49152:192.168.1.11:80
+[Host] H1 matched active socket for key=192.168.1.10:49152:192.168.1.11:80
+[TCP] Processing segment: flags=0x18 seq=995 ack=0
+[TCP] Added in-order segment to receive buffer (size: 1614)
+[TCP] Accepted data segment
+[HTTP Server] Mengirimkan HTTP Response (size: 1614 bytes)
+[TCP] updateChecksum 192.168.1.11->192.168.1.10 computed=0x5dbd payloadLen=0
+[TCP] State transition: ESTABLISHED -> FIN_WAIT_1
+[TCP] Initiating close: sending FIN
+[Host] H2 sending IPv4 unicast 192.168.1.11->192.168.1.10 dstMac=72:cd:44:04:cd:99
+[Host] H1 received IPv4 frame: 192.168.1.11 -> 192.168.1.10, ether src=85:29:b0:3e:8f:58 dst=72:cd:44:04:cd:99
+[TCP] validateChecksum 192.168.1.11->192.168.1.10 stored=0x5dbd computed=0x5dbd ok=1
+[Host] H1 TCP dispatch key=192.168.1.10:49152:192.168.1.11:80
+[Host] H1 matched active socket for key=192.168.1.10:49152:192.168.1.11:80
+[TCP] Processing segment: flags=0x11 seq=2609 ack=0
+[TCP] Received FIN
+[TCP] State transition: ESTABLISHED -> CLOSE_WAIT
+[TCP] updateChecksum 192.168.1.10->192.168.1.11 computed=0x6401 payloadLen=0
+[TCP] updateChecksum 192.168.1.10->192.168.1.11 computed=0x59cf payloadLen=0
+[TCP] Received FIN, responding with ACK
+[TCP] updateChecksum 192.168.1.10->192.168.1.11 computed=0x59cf payloadLen=0
+[Host] H1 sending IPv4 unicast 192.168.1.10->192.168.1.11 dstMac=85:29:b0:3e:8f:58
+[Host] H2 received IPv4 frame: 192.168.1.10 -> 192.168.1.11, ether src=72:cd:44:04:cd:99 dst=85:29:b0:3e:8f:58
+[TCP] validateChecksum 192.168.1.10->192.168.1.11 stored=0x59cf computed=0x59cf ok=1
+[Host] H2 TCP dispatch key=192.168.1.11:80:192.168.1.10:49152
+[Host] H2 matched active socket for key=192.168.1.11:80:192.168.1.10:49152
+[TCP] Processing segment: flags=0x10 seq=1069 ack=2610
+[TCP] State transition: FIN_WAIT_1 -> FIN_WAIT_2
+[TCP] Received ACK for FIN, in FIN_WAIT_2
+[TCP] State transition: FIN_WAIT_2 -> LISTEN
+[HTTP Client] Menerima HTTP Response:
+
+------------------------------------------------------------
+HTTP/1.1 200 OK
+Content-Type: text/html
+Content-Length: 1529
+Connection: close
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>MAGI System v4.0 - Caspar-3 Operational</title>
+  <style>
+    body { background: #0c0703; color: #ff5500; font-family: 'Outfit', 'Courier New', monospace; margin: 0; padding: 40px; text-align: center; }
+    .container { max-width: 650px; margin: 40px auto; padding: 30px; border: 2px solid #ff5500; border-radius: 8px; background: rgba(255, 85, 0, 0.05); box-shadow: 0 0 25px rgba(255, 85, 0, 0.15); }
+    h1 { font-size: 2.2em; border-bottom: 2px solid #ff5500; padding-bottom: 15px; margin-top: 0; letter-spacing: 2px; text-shadow: 0 0 10px rgba(255, 85, 0, 0.5); }
+    .status { color: #00ff66; font-weight: bold; text-shadow: 0 0 8px rgba(0, 255, 102, 0.4); }
+    .highlight { color: #ffaa00; }
+    p { font-size: 1.1em; line-height: 1.6; color: #ffcc99; }
+    .footer { margin-top: 30px; font-size: 0.9em; color: #663311; border-top: 1px solid #331a00; padding-top: 15px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>MAGI-3 SYSTEM DETECTED</h1>
+    <p>Simulated Node: <span class="highlight">H2</span></p>
+    <p>Server IP: <span class="highlight">192.168.1.11/24</span></p>
+    <p>Status: <span class="status">OPERATIONAL (milestone_4)</span></p>
+    <p>File Served: <code>index.html</code> (Simulated Content)</p>
+    <hr style="border-color: #552200; margin: 20px 0;">
+    <p><i>"God's in his heaven, all's right with the world."</i></p>
+    <div class="footer">NERV Geofront Communications Network Simulator</div>
+  </div>
+</body>
+</html>
+
+------------------------------------------------------------
+[TCP] updateChecksum 192.168.1.10->192.168.1.11 computed=0x63c1 payloadLen=0
+[TCP] State transition: CLOSE_WAIT -> LAST_ACK
+[TCP] Initiating close from CLOSE_WAIT: sending FIN (LAST_ACK)
+[MagiSocket] sendTcpSegment: localIp=192.168.1.10 remoteIp=192.168.1.11 localPort=49152 remotePort=80
+[Host] H1 sending IPv4 unicast 192.168.1.10->192.168.1.11 dstMac=85:29:b0:3e:8f:58
+[Host] H2 received IPv4 frame: 192.168.1.10 -> 192.168.1.11, ether src=72:cd:44:04:cd:99 dst=85:29:b0:3e:8f:58
+[TCP] validateChecksum 192.168.1.10->192.168.1.11 stored=0x63c1 computed=0x63c1 ok=1
+[Host] H2 TCP dispatch key=192.168.1.11:80:192.168.1.10:49152
+[Host] H2 matched active socket for key=192.168.1.11:80:192.168.1.10:49152
+[TCP] Processing segment: flags=0x11 seq=1069 ack=0
+[TCP] Received FIN
+
+Magi>
