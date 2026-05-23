@@ -5,6 +5,8 @@
 #include "layer2/arp.hpp"
 #include "layer2/ethernet.hpp"
 #include "layer3/ip_utils.hpp"
+#include "layer3/rip.hpp"
+#include "layer4/udp.hpp"
 
 #include <algorithm>
 #include <iomanip>
@@ -18,6 +20,8 @@ namespace {
 const short kEtherTypeIpv4 = static_cast<short>(0x0800);
 const short kEtherTypeArp = static_cast<short>(0x0806);
 const std::string kBroadcastMac = "ff:ff:ff:ff:ff:ff";
+const std::string kRipMulticastAddr = "224.0.0.9";
+const std::string kRipBroadcastAddr = "255.255.255.255";
 
 }  // namespace
 
@@ -82,7 +86,9 @@ void Node::printInfo() const {
 }
 
 Router::Router(const std::string& name, uint32_t numPorts)
-    : Node(name), numPorts(numPorts), nextIpIdentification(1) {
+    : Node(name), numPorts(numPorts), nextIpIdentification(1),
+      ripEnabled(false), ripUpdateInterval(3), ripCommandCounter(0),
+      ripInvalidTimeout(6), ripFlushTimeout(9) {
     for (uint32_t i = 0; i < numPorts; ++i) {
         addInterface();
     }
@@ -132,6 +138,7 @@ std::vector<RouterResolvedRoute> Router::buildRoutingTable() const {
         route.outPortNumber = it->second.portNumber;
         route.outVlanId = it->second.vlanId;
         route.connected = true;
+        route.routeSource = "connected";
         routes.push_back(route);
     }
 
@@ -148,6 +155,33 @@ std::vector<RouterResolvedRoute> Router::buildRoutingTable() const {
         route.outPortNumber = staticRoutes[i].outPortNumber;
         route.outVlanId = staticRoutes[i].outVlanId;
         route.connected = false;
+        route.routeSource = "static";
+        routes.push_back(route);
+    }
+
+    for (size_t i = 0; i < ripRoutes.size(); ++i) {
+        const std::string cidr = iputil::canonicalCidr(ripRoutes[i].destinationCidr);
+        if (cidr.empty() || ripRoutes[i].metric >= kRipInfinity) {
+            continue;
+        }
+
+        bool isDuplicateConnected = false;
+        for (size_t j = 0; j < routes.size(); ++j) {
+            if (routes[j].destinationCidr == cidr && routes[j].routeSource == "connected") {
+                isDuplicateConnected = true;
+                break;
+            }
+        }
+        if (isDuplicateConnected) continue;
+
+        RouterResolvedRoute route;
+        route.destinationCidr = cidr;
+        route.prefixLength = iputil::prefixLength(cidr, 32);
+        route.nextHopIp = ripRoutes[i].nextHopIp;
+        route.outPortNumber = ripRoutes[i].outPortNumber;
+        route.outVlanId = ripRoutes[i].outVlanId;
+        route.connected = false;
+        route.routeSource = "rip";
         routes.push_back(route);
     }
 
@@ -156,8 +190,14 @@ std::vector<RouterResolvedRoute> Router::buildRoutingTable() const {
                   if (left.prefixLength != right.prefixLength) {
                       return left.prefixLength > right.prefixLength;
                   }
-                  if (left.connected != right.connected) {
-                      return left.connected;
+                  static const std::string prioMap[] = {"connected", "static", "rip"};
+                  int leftPrio = 3, rightPrio = 3;
+                  for (int p = 0; p < 3; ++p) {
+                      if (left.routeSource == prioMap[p]) leftPrio = p;
+                      if (right.routeSource == prioMap[p]) rightPrio = p;
+                  }
+                  if (leftPrio != rightPrio) {
+                      return leftPrio < rightPrio;
                   }
                   return left.destinationCidr < right.destinationCidr;
               });
@@ -229,7 +269,253 @@ void Router::printRoutingTable() const {
         std::cout << "  " << std::setw(17) << std::left << routes[i].destinationCidr
                   << "  " << std::setw(15) << (routes[i].nextHopIp.empty() ? "direct" : routes[i].nextHopIp)
                   << "  " << std::setw(10) << ifaceSpec.str()
-                  << "  " << (routes[i].connected ? "connected" : "static") << std::endl;
+                  << "  " << routes[i].routeSource << std::endl;
+    }
+}
+
+void Router::enableRip() {
+    ripEnabled = true;
+    ripCommandCounter = 0;
+
+    std::cout << "[RIP] RIP diaktifkan pada router '" << name << "'" << std::endl;
+}
+
+void Router::disableRip() {
+    ripEnabled = false;
+    ripRoutes.clear();
+    std::cout << "[RIP] RIP dinonaktifkan pada router '" << name << "'" << std::endl;
+}
+
+void Router::ageRipRoutes() {
+    if (!ripEnabled) return;
+
+    for (size_t i = 0; i < ripRoutes.size(); ) {
+        ripRoutes[i].ageTimer++;
+
+        bool isConnected = false;
+        for (std::map<std::string, RouterLogicalInterface>::const_iterator it = logicalInterfaces.begin();
+             it != logicalInterfaces.end(); ++it) {
+            if (iputil::canonicalCidr(it->second.cidr) == ripRoutes[i].destinationCidr) {
+                isConnected = true;
+                break;
+            }
+        }
+
+        if (isConnected) {
+            ripRoutes[i].ageTimer = 0;
+            ++i;
+            continue;
+        }
+
+        if (ripRoutes[i].ageTimer >= ripFlushTimeout) {
+            ripRoutes.erase(ripRoutes.begin() + static_cast<long>(i));
+            continue;
+        }
+
+        if (ripRoutes[i].ageTimer >= ripInvalidTimeout) {
+            ripRoutes[i].metric = kRipInfinity;
+        }
+
+        ++i;
+    }
+}
+
+void Router::buildRipEntriesForInterface(uint32_t portNumber, int vlanId, std::vector<RipEntry>& entries) const {
+    if (!ripEnabled) return;
+
+    std::set<std::string> addedNetworks;
+
+    for (std::map<std::string, RouterLogicalInterface>::const_iterator it = logicalInterfaces.begin();
+         it != logicalInterfaces.end(); ++it) {
+        if (it->second.portNumber == portNumber && it->second.vlanId == vlanId) continue;
+
+        iputil::ParsedCidr parsed;
+        if (!iputil::parseCidr(it->second.cidr, parsed)) continue;
+
+        RipEntry entry;
+        entry.addressFamilyId = kRipAddressFamilyIp;
+        entry.ipAddress = parsed.networkValue;
+        entry.subnetMask = parsed.mask;
+        entry.metric = 1;
+        std::string cidr = iputil::toIp(parsed.networkValue) + "/" + std::to_string(parsed.prefixLength);
+        if (addedNetworks.find(cidr) == addedNetworks.end()) {
+            addedNetworks.insert(cidr);
+            entries.push_back(entry);
+        }
+    }
+
+    for (size_t i = 0; i < ripRoutes.size(); ++i) {
+        if (ripRoutes[i].metric >= kRipInfinity) continue;
+        if (ripRoutes[i].outPortNumber == portNumber && ripRoutes[i].outVlanId == vlanId) continue;
+
+        iputil::ParsedCidr parsed;
+        if (!iputil::parseCidr(ripRoutes[i].destinationCidr, parsed)) continue;
+
+        std::string cidr = iputil::toIp(parsed.networkValue) + "/" + std::to_string(parsed.prefixLength);
+        if (addedNetworks.find(cidr) != addedNetworks.end()) continue;
+
+        RipEntry entry;
+        entry.addressFamilyId = kRipAddressFamilyIp;
+        entry.ipAddress = parsed.networkValue;
+        entry.subnetMask = parsed.mask;
+        entry.metric = ripRoutes[i].metric;
+        addedNetworks.insert(cidr);
+        entries.push_back(entry);
+    }
+}
+
+void Router::sendRipUpdateOnInterface(uint32_t portNumber, int vlanId) {
+    std::shared_ptr<Interface> iface = getInterface(portNumber);
+    const RouterLogicalInterface* li = getLogicalInterface(portNumber, vlanId);
+    if (!iface || !li || !iface->isConnected()) return;
+
+    std::vector<RipEntry> entries;
+    buildRipEntriesForInterface(portNumber, vlanId, entries);
+    if (entries.empty()) return;
+
+    RipPacket rip;
+    rip.command = kRipCommandResponse;
+    rip.entries = entries;
+
+    std::vector<uint8_t> ripData = rip.toBytes();
+
+    UDPSegment udp;
+    udp.sourcePort = kRipPort;
+    udp.destinationPort = kRipPort;
+    udp.payload = ripData;
+    udp.updateChecksum(iputil::stripCidr(li->cidr), kRipMulticastAddr);
+
+    IPv4Packet ip;
+    ip.srcIp = iputil::stripCidr(li->cidr);
+    ip.dstIp = kRipMulticastAddr;
+    ip.protocol = 17;
+    ip.ttl = 1;
+    ip.identification = nextIpIdentification++;
+    ip.payload = udp.toBytes();
+    ip.updateChecksum();
+
+    EthernetFrame frame;
+    frame.dstMac = kBroadcastMac;
+    frame.srcMac = iface->getMacAddress();
+    frame.etherType = kEtherTypeIpv4;
+    frame.vlanId = vlanId;
+    frame.payload = ip.toBytes();
+    iface->send(frame.toBytes());
+}
+
+void Router::sendRipUpdates() {
+    if (!ripEnabled) return;
+
+    std::set<std::string> sentInterfaces;
+    for (std::map<std::string, RouterLogicalInterface>::const_iterator it = logicalInterfaces.begin();
+         it != logicalInterfaces.end(); ++it) {
+        std::string key = iputil::makeLogicalInterfaceKey(it->second.portNumber, it->second.vlanId);
+        if (sentInterfaces.find(key) != sentInterfaces.end()) continue;
+        sentInterfaces.insert(key);
+        sendRipUpdateOnInterface(it->second.portNumber, it->second.vlanId);
+    }
+}
+
+void Router::processRipUpdate(const std::string& sourceIp, const std::vector<uint8_t>& ripPayload, uint32_t ingressPort, int vlanId) {
+    if (!ripEnabled) return;
+
+    RipPacket rip;
+    if (!rip.fromBytes(ripPayload) || rip.command != kRipCommandResponse) return;
+
+    std::string sourceRouterIp = sourceIp;
+
+    for (size_t i = 0; i < rip.entries.size(); ++i) {
+        const RipEntry& entry = rip.entries[i];
+        if (entry.addressFamilyId != kRipAddressFamilyIp || entry.metric >= kRipInfinity) continue;
+
+        uint32_t prefixLen = 0;
+        uint32_t mask = entry.subnetMask;
+        for (int b = 31; b >= 0; --b) {
+            if (mask & (1u << b)) prefixLen++;
+            else break;
+        }
+
+        uint32_t networkAddr = entry.ipAddress & entry.subnetMask;
+        std::string destAddr = iputil::toIp(networkAddr);
+        std::string destCidr = destAddr + "/" + std::to_string(prefixLen);
+        uint32_t newMetric = entry.metric + 1;
+        if (newMetric > kRipInfinity) newMetric = kRipInfinity;
+
+        bool found = false;
+        for (size_t j = 0; j < ripRoutes.size(); ++j) {
+            if (ripRoutes[j].destinationCidr == destCidr) {
+                found = true;
+                if (ripRoutes[j].nextHopIp == sourceRouterIp) {
+                    ripRoutes[j].metric = static_cast<uint8_t>(newMetric);
+                    ripRoutes[j].ageTimer = 0;
+                } else if (newMetric < ripRoutes[j].metric) {
+                    ripRoutes[j].nextHopIp = sourceRouterIp;
+                    ripRoutes[j].metric = static_cast<uint8_t>(newMetric);
+                    ripRoutes[j].outPortNumber = ingressPort;
+                    ripRoutes[j].outVlanId = vlanId;
+                    ripRoutes[j].ageTimer = 0;
+                }
+                break;
+            }
+        }
+
+        if (!found && newMetric < kRipInfinity) {
+            bool isConnected = false;
+            for (std::map<std::string, RouterLogicalInterface>::const_iterator it = logicalInterfaces.begin();
+                 it != logicalInterfaces.end(); ++it) {
+                if (iputil::canonicalCidr(it->second.cidr) == destCidr) {
+                    isConnected = true;
+                    break;
+                }
+            }
+            if (!isConnected) {
+                RouterRipRoute newRoute;
+                newRoute.destinationCidr = destCidr;
+                newRoute.nextHopIp = sourceRouterIp;
+                newRoute.outPortNumber = ingressPort;
+                newRoute.outVlanId = vlanId;
+                newRoute.metric = static_cast<uint8_t>(newMetric);
+                newRoute.ageTimer = 0;
+                ripRoutes.push_back(newRoute);
+            }
+        }
+    }
+}
+
+void Router::triggerRipUpdate() {
+    if (!ripEnabled) return;
+
+    ageRipRoutes();
+    sendRipUpdates();
+    ripCommandCounter = 0;
+}
+
+void Router::printRipRoutes() const {
+    std::cout << "[RIP Routes: " << name << "]" << std::endl;
+    if (!ripEnabled) {
+        std::cout << "  RIP tidak aktif." << std::endl;
+        return;
+    }
+
+    if (ripRoutes.empty()) {
+        std::cout << "  (empty)" << std::endl;
+        return;
+    }
+
+    std::cout << "  Destination        Next Hop         Interface   Metric  Age" << std::endl;
+    std::cout << "  -----------------  ---------------  ----------  ------  ---" << std::endl;
+    for (size_t i = 0; i < ripRoutes.size(); ++i) {
+        std::stringstream ifaceSpec;
+        ifaceSpec << ripRoutes[i].outPortNumber;
+        if (ripRoutes[i].outVlanId != iputil::kUntaggedVlan) {
+            ifaceSpec << "." << ripRoutes[i].outVlanId;
+        }
+
+        std::cout << "  " << std::setw(17) << std::left << ripRoutes[i].destinationCidr
+                  << "  " << std::setw(15) << (ripRoutes[i].nextHopIp.empty() ? "direct" : ripRoutes[i].nextHopIp)
+                  << "  " << std::setw(10) << ifaceSpec.str()
+                  << "  " << std::setw(5) << static_cast<int>(ripRoutes[i].metric)
+                  << "  " << ripRoutes[i].ageTimer << std::endl;
     }
 }
 
@@ -623,6 +909,25 @@ void Router::handleIpv4Frame(Interface* incomingInterface, const EthernetFrame& 
     packet = applyNATTranslation(packet, false, ingressPort);
 
     const RouterLogicalInterface* localInterface = findInterfaceByIp(packet.dstIp);
+    bool isRipDest = (packet.dstIp == kRipBroadcastAddr || packet.dstIp == kRipMulticastAddr);
+    bool isLocalOrRip = (localInterface != nullptr || isRipDest);
+
+    if (isLocalOrRip && packet.protocol == 17) {
+        UDPSegment udp;
+        try {
+            udp.fromBytes(packet.payload);
+        } catch (...) {
+            if (!localInterface) return;
+        }
+
+        if (udp.destinationPort == kRipPort && ripEnabled) {
+            processRipUpdate(packet.srcIp, udp.payload, ingressPort, frame.vlanId);
+            if (!localInterface) return;
+        }
+
+        if (!localInterface) return;
+    }
+
     if (localInterface != nullptr) {
         if (packet.protocol != 1) {
             return;
