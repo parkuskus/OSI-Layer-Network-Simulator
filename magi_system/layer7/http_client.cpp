@@ -83,7 +83,8 @@ namespace magi
         std::string requestStr = reqStream.str();
         std::vector<uint8_t> reqBytes(requestStr.begin(), requestStr.end());
 
-        std::cout << "[HTTP Client] Mengirimkan HTTP Request:\n" << requestStr << std::endl;
+        std::cout << "[HTTP Client] Mengirimkan HTTP Request:\n"
+                  << requestStr << std::endl;
         clientSock->send(reqBytes);
 
         // 5. Receive response (synchronously delivered to receiveBuffer after server tick)
@@ -95,7 +96,8 @@ namespace magi
         else
         {
             std::string responseStr(respBytes.begin(), respBytes.end());
-            std::cout << "[HTTP Client] Menerima HTTP Response:\n" << std::endl;
+            std::cout << "[HTTP Client] Menerima HTTP Response:\n"
+                      << std::endl;
             std::cout << "------------------------------------------------------------" << std::endl;
             std::cout << responseStr << std::endl;
             std::cout << "------------------------------------------------------------" << std::endl;

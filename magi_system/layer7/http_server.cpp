@@ -191,7 +191,8 @@ namespace magi
         if (!reqData.empty())
         {
             std::string requestStr(reqData.begin(), reqData.end());
-            std::cout << "[HTTP Server] Menerima HTTP Request:\n" << requestStr << std::endl;
+            std::cout << "[HTTP Server] Menerima HTTP Request:\n"
+                      << requestStr << std::endl;
 
             // Generate and send response
             std::string responseStr = generateResponse(requestStr);
@@ -232,4 +233,3 @@ namespace magi
         serverSocket->listen(5);
     }
 }
-

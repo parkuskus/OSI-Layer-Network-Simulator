@@ -238,8 +238,8 @@ namespace magi
             frame.etherType = kEtherTypeIpv4;
             frame.vlanId = iputil::kUntaggedVlan;
             frame.payload = ipv4Bytes;
-                std::cout << "[Host] " << name << " sending IPv4 broadcast " << packet.srcIp << "->" << packet.dstIp << " via MAC " << frame.srcMac << std::endl;
-                iface->send(frame.toBytes());
+            std::cout << "[Host] " << name << " sending IPv4 broadcast " << packet.srcIp << "->" << packet.dstIp << " via MAC " << frame.srcMac << std::endl;
+            iface->send(frame.toBytes());
             return true;
         }
 
@@ -264,8 +264,8 @@ namespace magi
             frame.etherType = kEtherTypeIpv4;
             frame.vlanId = iputil::kUntaggedVlan;
             frame.payload = ipv4Bytes;
-                std::cout << "[Host] " << name << " sending IPv4 unicast " << packet.srcIp << "->" << packet.dstIp << " dstMac=" << frame.dstMac << std::endl;
-                iface->send(frame.toBytes());
+            std::cout << "[Host] " << name << " sending IPv4 unicast " << packet.srcIp << "->" << packet.dstIp << " dstMac=" << frame.dstMac << std::endl;
+            iface->send(frame.toBytes());
             return true;
         }
 
@@ -693,7 +693,9 @@ namespace magi
                         seg.updateChecksum(resp.srcIp, resp.dstIp);
                         resp.payload = seg.toBytes();
                     }
-                    catch (...) {}
+                    catch (...)
+                    {
+                    }
                     resp.updateChecksum();
                     sendIpv4Packet(resp);
                 }
@@ -733,7 +735,9 @@ namespace magi
                         seg.updateChecksum(resp.srcIp, resp.dstIp);
                         resp.payload = seg.toBytes();
                     }
-                    catch (...) {}
+                    catch (...)
+                    {
+                    }
                     resp.updateChecksum();
                     sendIpv4Packet(resp);
                 }

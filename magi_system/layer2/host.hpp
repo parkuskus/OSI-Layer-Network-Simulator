@@ -103,7 +103,7 @@ namespace magi
                                   const std::string &remoteIp, uint16_t remotePort,
                                   std::shared_ptr<TCPSocket> socket);
         std::shared_ptr<TCPSocket> findActiveSocket(const std::string &localIp, uint16_t localPort,
-                                const std::string &remoteIp, uint16_t remotePort) const;
+                                                    const std::string &remoteIp, uint16_t remotePort) const;
         void unregisterListeningSocket(uint16_t port);
         void unregisterActiveSocket(const std::string &localIp, uint16_t localPort,
                                     const std::string &remoteIp, uint16_t remotePort);
