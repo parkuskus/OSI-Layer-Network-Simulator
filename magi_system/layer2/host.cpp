@@ -30,9 +30,26 @@ namespace
         std::map<uint32_t, std::vector<uint8_t>> fragmentsByOffset;
         size_t expectedPayloadSize = 0;
         bool finalFragmentSeen = false;
+        std::chrono::steady_clock::time_point lastUpdated = std::chrono::steady_clock::now();
     };
 
     std::map<std::string, ReassemblyBuffer> gReassemblyBuffers;
+    const std::chrono::seconds kReassemblyBufferTtl(60);
+
+    void pruneExpiredReassemblyBuffers(const std::chrono::steady_clock::time_point &now)
+    {
+        for (std::map<std::string, ReassemblyBuffer>::iterator it = gReassemblyBuffers.begin(); it != gReassemblyBuffers.end();)
+        {
+            if (now - it->second.lastUpdated > kReassemblyBufferTtl)
+            {
+                it = gReassemblyBuffers.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
+        }
+    }
 
     std::string makeReassemblyKey(const magi::Host *host,
                                   const std::string &srcIp,
@@ -101,6 +118,9 @@ namespace
                                  const magi::IPv4Packet &fragment,
                                  magi::IPv4Packet &outPacket)
     {
+        const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+        pruneExpiredReassemblyBuffers(now);
+
         if (fragment.fragmentOffset == 0 && (fragment.flags & 0x1) == 0)
         {
             outPacket = fragment;
@@ -113,6 +133,7 @@ namespace
                                                   fragment.protocol,
                                                   fragment.identification);
         ReassemblyBuffer &buffer = gReassemblyBuffers[key];
+                            buffer.lastUpdated = now;
         const uint32_t byteOffset = static_cast<uint32_t>(fragment.fragmentOffset) * 8u;
         buffer.fragmentsByOffset[byteOffset] = fragment.payload;
 

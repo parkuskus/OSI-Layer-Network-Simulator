@@ -22,6 +22,48 @@ const short kEtherTypeArp = static_cast<short>(0x0806);
 const std::string kBroadcastMac = "ff:ff:ff:ff:ff:ff";
 const std::string kRipMulticastAddr = "224.0.0.9";
 const std::string kRipBroadcastAddr = "255.255.255.255";
+const uint32_t kDefaultLinkMtu = 1500;
+
+uint32_t getLinkMtu(const std::shared_ptr<Interface>& iface) {
+    if (!iface || !iface->getLink()) {
+        return kDefaultLinkMtu;
+    }
+    return iface->getLink()->getMtu();
+}
+
+std::vector<IPv4Packet> fragmentIpv4Packet(const IPv4Packet& packet, uint32_t mtu) {
+    const size_t headerSize = static_cast<size_t>(packet.ihl) * 4;
+    if (mtu <= headerSize) {
+        return std::vector<IPv4Packet>{packet};
+    }
+
+    const size_t maxPayloadPerFragment = ((mtu - headerSize) / 8) * 8;
+    if (maxPayloadPerFragment == 0 || packet.payload.size() <= maxPayloadPerFragment) {
+        return std::vector<IPv4Packet>{packet};
+    }
+
+    std::vector<IPv4Packet> fragments;
+    size_t offset = 0;
+    while (offset < packet.payload.size()) {
+        const size_t remaining = packet.payload.size() - offset;
+        const size_t chunkSize = (remaining > maxPayloadPerFragment) ? maxPayloadPerFragment : remaining;
+
+        IPv4Packet fragment = packet;
+        fragment.flags = static_cast<uint8_t>(packet.flags & static_cast<uint8_t>(~0x1));
+        if (remaining > chunkSize) {
+            fragment.flags = static_cast<uint8_t>(fragment.flags | 0x1);
+        }
+        fragment.fragmentOffset = static_cast<uint16_t>(offset / 8);
+        fragment.payload.assign(packet.payload.begin() + static_cast<long>(offset),
+                                packet.payload.begin() + static_cast<long>(offset + chunkSize));
+        fragment.updateChecksum();
+        fragments.push_back(fragment);
+
+        offset += chunkSize;
+    }
+
+    return fragments;
+}
 
 }  // namespace
 
@@ -722,13 +764,22 @@ bool Router::sendPacketOut(const IPv4Packet& packet,
     const std::string key = makeArpKey(outPortNumber, outVlanId, nextHopIp);
     std::map<std::string, std::string>::const_iterator arpIt = arpCache.find(key);
     if (arpIt != arpCache.end()) {
-        EthernetFrame frame;
-        frame.dstMac = arpIt->second;
-        frame.srcMac = iface->getMacAddress();
-        frame.etherType = kEtherTypeIpv4;
-        frame.vlanId = outVlanId;
-        frame.payload = packet.toBytes();
-        iface->send(frame.toBytes());
+        const uint32_t linkMtu = getLinkMtu(iface);
+        const std::vector<IPv4Packet> fragments = fragmentIpv4Packet(packet, linkMtu);
+        if (fragments.size() > 1) {
+            std::cout << "[Router] " << name << " memecah IPv4 packet menjadi " << fragments.size()
+                      << " fragment (MTU " << linkMtu << ")" << std::endl;
+        }
+
+        for (size_t i = 0; i < fragments.size(); ++i) {
+            EthernetFrame frame;
+            frame.dstMac = arpIt->second;
+            frame.srcMac = iface->getMacAddress();
+            frame.etherType = kEtherTypeIpv4;
+            frame.vlanId = outVlanId;
+            frame.payload = fragments[i].toBytes();
+            iface->send(frame.toBytes());
+        }
         return true;
     }
 
@@ -755,14 +806,23 @@ void Router::flushQueuedPackets(uint32_t outPortNumber, int outVlanId, const std
         return;
     }
 
+    const uint32_t linkMtu = getLinkMtu(iface);
     for (size_t i = 0; i < queueIt->second.size(); ++i) {
-        EthernetFrame frame;
-        frame.dstMac = arpIt->second;
-        frame.srcMac = iface->getMacAddress();
-        frame.etherType = kEtherTypeIpv4;
-        frame.vlanId = outVlanId;
-        frame.payload = queueIt->second[i].packet.toBytes();
-        iface->send(frame.toBytes());
+        const std::vector<IPv4Packet> fragments = fragmentIpv4Packet(queueIt->second[i].packet, linkMtu);
+        if (fragments.size() > 1) {
+            std::cout << "[Router] " << name << " memecah IPv4 packet menjadi " << fragments.size()
+                      << " fragment (MTU " << linkMtu << ")" << std::endl;
+        }
+
+        for (size_t j = 0; j < fragments.size(); ++j) {
+            EthernetFrame frame;
+            frame.dstMac = arpIt->second;
+            frame.srcMac = iface->getMacAddress();
+            frame.etherType = kEtherTypeIpv4;
+            frame.vlanId = outVlanId;
+            frame.payload = fragments[j].toBytes();
+            iface->send(frame.toBytes());
+        }
     }
 
     pendingPackets.erase(queueIt);

@@ -165,6 +165,92 @@ bool runMilestone5Tests()
     magi_test::expect(stats, receivedUdp == udpSegment.payload, "UDP socket receives payload after out-of-order reassembly");
     magi_test::expect(stats, magi_test::contains(udpLog, "menyimpan fragment IPv4"), "Receiver logs buffered fragments during reassembly");
 
+    magi_test::printSection("Milestone 5 - Multi-hop router fragmentation on egress MTU");
+    magi::Router router("RM", 2);
+    router.configureInterface(1, magi::iputil::kUntaggedVlan, "10.70.0.1/24");
+    router.configureInterface(2, magi::iputil::kUntaggedVlan, "10.70.1.1/24");
+
+    magi::Host multiHopClient("HC3", "10.70.0.2/24", "10.70.0.1");
+    magi::Host multiHopServer("HS3", "10.70.1.2/24", "10.70.1.1");
+    multiHopClient.getInterface(1)->setMacAddress("00:00:00:00:70:01");
+    router.getInterface(1)->setMacAddress("00:00:00:00:70:11");
+    router.getInterface(2)->setMacAddress("00:00:00:00:70:12");
+    multiHopServer.getInterface(1)->setMacAddress("00:00:00:00:70:02");
+    magi::Link::create(multiHopClient.getInterface(1), router.getInterface(1), 0, 1500);
+    magi::Link::create(router.getInterface(2), multiHopServer.getInterface(1), 0, 128);
+
+    auto multiHopUdp = std::make_shared<magi::UDPSocket>(&multiHopServer);
+    magi_test::expect(stats, multiHopUdp->bind("10.70.1.2", 5050), "Multi-hop UDP receiver bind succeeds");
+    multiHopServer.registerUdpSocket(5050, multiHopUdp);
+
+    magi::UDPSocket multiHopClientUdp(&multiHopClient);
+    magi_test::expect(stats, multiHopClientUdp.bind("10.70.0.2", 4500), "Multi-hop UDP sender bind succeeds");
+
+    std::vector<uint8_t> multiHopPayload = makePatternBytes(512);
+    std::string multiHopLog = magi_test::captureStdout([&]()
+                                                       {
+        const size_t sent = multiHopClientUdp.sendto("10.70.1.2", 5050, multiHopPayload);
+        magi_test::expect(stats, sent == multiHopPayload.size(), "Client sends UDP payload across router"); });
+
+    std::string multiHopSrcIp;
+    uint16_t multiHopSrcPort = 0;
+    std::vector<uint8_t> receivedMultiHop = multiHopUdp->recvfrom(multiHopSrcIp, multiHopSrcPort, 1024);
+    magi_test::expect(stats, receivedMultiHop == multiHopPayload, "Router forwards and fragments payload on egress MTU");
+    magi_test::expect(stats, multiHopSrcIp == "10.70.0.2", "Multi-hop UDP preserves source IP");
+    magi_test::expect(stats, multiHopSrcPort == 4500, "Multi-hop UDP preserves source port");
+    magi_test::expect(stats, magi_test::contains(multiHopLog, "[Router] RM memecah IPv4 packet"), "Router logs fragmentation on MTU-limited egress");
+
+    magi_test::printSection("Milestone 5 - Incomplete fragment does not deliver early");
+    magi::Host partialSender("HP1", "192.168.61.1/24", "192.168.61.2");
+    magi::Host partialReceiver("HP2", "192.168.61.2/24", "192.168.61.1");
+    partialSender.getInterface(1)->setMacAddress("00:00:00:00:61:11");
+    partialReceiver.getInterface(1)->setMacAddress("00:00:00:00:61:12");
+    magi::Link::create(partialSender.getInterface(1), partialReceiver.getInterface(1), 0, 256);
+
+    auto partialUdp = std::make_shared<magi::UDPSocket>(&partialReceiver);
+    magi_test::expect(stats, partialUdp->bind("192.168.61.2", 5354), "Partial-reassembly UDP receiver bind succeeds");
+    partialReceiver.registerUdpSocket(5354, partialUdp);
+
+    magi::IPv4Packet partialPacket;
+    partialPacket.srcIp = "192.168.61.1";
+    partialPacket.dstIp = "192.168.61.2";
+    partialPacket.protocol = 17;
+    partialPacket.ttl = 64;
+    partialPacket.identification = 91;
+
+    magi::UDPSegment partialUdpSegment;
+    partialUdpSegment.sourcePort = 5555;
+    partialUdpSegment.destinationPort = 5354;
+    partialUdpSegment.payload = makePatternBytes(180);
+    partialUdpSegment.updateChecksum(partialPacket.srcIp, partialPacket.dstIp);
+    partialPacket.payload = partialUdpSegment.toBytes();
+    partialPacket.updateChecksum();
+
+    std::vector<magi::IPv4Packet> partialFragments = fragmentIpv4(partialPacket, 84);
+    magi_test::expect(stats, partialFragments.size() >= 2, "Partial packet helper produces multiple fragments");
+
+    std::string partialLog = magi_test::captureStdout([&]()
+                                                      {
+        magi::EthernetFrame frame = makeEthernetFrame("00:00:00:00:61:21",
+                                                      "00:00:00:00:61:12",
+                                                      magi::iputil::kUntaggedVlan,
+                                                      partialFragments.front());
+        partialReceiver.handleReceive(partialReceiver.getInterface(1).get(), frame.toBytes()); });
+    magi_test::expect(stats, magi_test::contains(partialLog, "menyimpan fragment IPv4"), "Receiver buffers the first fragment");
+    magi_test::expect(stats, !magi_test::contains(partialLog, "berhasil reassembly IPv4"), "Incomplete fragment does not complete reassembly");
+
+    magi::UDPSocket controlSender(&partialSender);
+    magi_test::expect(stats, controlSender.bind("192.168.61.1", 5556), "Control UDP sender bind succeeds");
+    std::vector<uint8_t> controlPayload = bytesFromString("complete-packet");
+    magi_test::expect(stats, controlSender.sendto("192.168.61.2", 5354, controlPayload) == controlPayload.size(), "Control packet send succeeds after incomplete fragment");
+
+    std::string controlSrcIp;
+    uint16_t controlSrcPort = 0;
+    std::vector<uint8_t> controlReceived = partialUdp->recvfrom(controlSrcIp, controlSrcPort, 1024);
+    magi_test::expect(stats, controlReceived == controlPayload, "Incomplete fragment does not surface before complete packet");
+    magi_test::expect(stats, controlSrcIp == "192.168.61.1", "Control packet preserves source IP");
+    magi_test::expect(stats, controlSrcPort == 5556, "Control packet preserves source port");
+
     magi_test::printSection("Milestone 5 - No fragmentation below MTU");
     auto smallServer = std::make_shared<magi::Host>("HS2", "10.51.0.2/24", "10.51.0.1");
     auto smallClient = std::make_shared<magi::Host>("HC2", "10.51.0.1/24", "10.51.0.2");

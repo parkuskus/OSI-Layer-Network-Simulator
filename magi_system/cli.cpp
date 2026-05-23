@@ -1491,6 +1491,11 @@ namespace magi
                         }
                     }
 
+                    if (mtu < 68)
+                    {
+                        mtu = 1500;
+                    }
+
                     if (endpoints.size() >= 2)
                     {
                         // Gunakan cmdLink untuk membuat koneksi
