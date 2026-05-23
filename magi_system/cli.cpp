@@ -18,7 +18,7 @@
 namespace magi
 {
 
-    CLI::CLI() : running(true)
+    CLI::CLI() : running(true), ripAutoInterval(3)
     {
     }
 
@@ -104,6 +104,10 @@ namespace magi
         else if (cmd == "nat")
         {
             cmdNAT(args);
+        }
+        else if (cmd == "rip")
+        {
+            cmdRip(args);
         }
         else if (cmd == "help" || cmd == "?")
         {
@@ -1927,6 +1931,216 @@ namespace magi
         }
     }
 
+    void CLI::cmdRip(const std::vector<std::string> &args)
+    {
+        if (args.size() < 2)
+        {
+            std::cout << "Penggunaan:" << std::endl;
+            std::cout << "  rip enable <router>       - Aktifkan RIP pada router" << std::endl;
+            std::cout << "  rip disable <router>      - Nonaktifkan RIP pada router" << std::endl;
+            std::cout << "  rip update [router]       - Trigger RIP update manual" << std::endl;
+            std::cout << "  rip show [router]         - Tampilkan RIP routes" << std::endl;
+            std::cout << "  rip interval <n>          - Set auto-update interval (CLI commands)" << std::endl;
+            return;
+        }
+
+        std::string subCmd = args[1];
+        std::transform(subCmd.begin(), subCmd.end(), subCmd.begin(), ::tolower);
+
+        if (subCmd == "enable")
+        {
+            if (args.size() < 3)
+            {
+                std::cout << "Penggunaan: rip enable <router>" << std::endl;
+                return;
+            }
+
+            auto node = findNode(args[2]);
+            if (!node)
+            {
+                std::cout << "Error: Node '" << args[2] << "' tidak ditemukan." << std::endl;
+                return;
+            }
+
+            auto router = std::dynamic_pointer_cast<Router>(node);
+            if (!router)
+            {
+                std::cout << "Error: Node '" << args[2] << "' bukan router." << std::endl;
+                return;
+            }
+
+            if (router->isRipEnabled())
+            {
+                std::cout << "[RIP] RIP sudah aktif pada router '" << args[2] << "'." << std::endl;
+                return;
+            }
+
+            router->enableRip();
+            // Trigger immediate update so router advertises its connected networks
+            router->triggerRipUpdate();
+        }
+        else if (subCmd == "disable")
+        {
+            if (args.size() < 3)
+            {
+                std::cout << "Penggunaan: rip disable <router>" << std::endl;
+                return;
+            }
+
+            auto node = findNode(args[2]);
+            if (!node)
+            {
+                std::cout << "Error: Node '" << args[2] << "' tidak ditemukan." << std::endl;
+                return;
+            }
+
+            auto router = std::dynamic_pointer_cast<Router>(node);
+            if (!router)
+            {
+                std::cout << "Error: Node '" << args[2] << "' bukan router." << std::endl;
+                return;
+            }
+
+            router->disableRip();
+        }
+        else if (subCmd == "update")
+        {
+            if (args.size() >= 3)
+            {
+                auto node = findNode(args[2]);
+                if (!node)
+                {
+                    std::cout << "Error: Node '" << args[2] << "' tidak ditemukan." << std::endl;
+                    return;
+                }
+
+                auto router = std::dynamic_pointer_cast<Router>(node);
+                if (!router)
+                {
+                    std::cout << "Error: Node '" << args[2] << "' bukan router." << std::endl;
+                    return;
+                }
+
+                if (!router->isRipEnabled())
+                {
+                    std::cout << "Error: RIP tidak aktif pada router '" << args[2] << "'." << std::endl;
+                    return;
+                }
+
+                router->triggerRipUpdate();
+                std::cout << "[RIP] RIP update triggered pada '" << args[2] << "'." << std::endl;
+            }
+            else
+            {
+                int count = 0;
+                for (std::map<std::string, std::shared_ptr<Node>>::const_iterator it = nodes.begin();
+                     it != nodes.end(); ++it)
+                {
+                    auto router = std::dynamic_pointer_cast<Router>(it->second);
+                    if (router && router->isRipEnabled())
+                    {
+                        router->triggerRipUpdate();
+                        count++;
+                    }
+                }
+                std::cout << "[RIP] RIP update triggered pada " << count << " router(s)." << std::endl;
+            }
+        }
+        else if (subCmd == "show")
+        {
+            if (args.size() >= 3)
+            {
+                auto node = findNode(args[2]);
+                if (!node)
+                {
+                    std::cout << "Error: Node '" << args[2] << "' tidak ditemukan." << std::endl;
+                    return;
+                }
+
+                auto router = std::dynamic_pointer_cast<Router>(node);
+                if (!router)
+                {
+                    std::cout << "Error: Node '" << args[2] << "' bukan router." << std::endl;
+                    return;
+                }
+
+                router->printRipRoutes();
+            }
+            else
+            {
+                for (std::map<std::string, std::shared_ptr<Node>>::const_iterator it = nodes.begin();
+                     it != nodes.end(); ++it)
+                {
+                    auto router = std::dynamic_pointer_cast<Router>(it->second);
+                    if (router)
+                    {
+                        router->printRipRoutes();
+                    }
+                }
+            }
+        }
+        else if (subCmd == "interval")
+        {
+            if (args.size() < 3)
+            {
+                std::cout << "Penggunaan: rip interval <n>" << std::endl;
+                return;
+            }
+
+            try
+            {
+                int val = std::stoi(args[2]);
+                if (val < 1)
+                {
+                    std::cout << "Error: Interval minimal 1." << std::endl;
+                    return;
+                }
+                ripAutoInterval = val;
+                std::cout << "[RIP] Auto-update interval di-set ke " << val << " CLI commands." << std::endl;
+            }
+            catch (...)
+            {
+                std::cout << "Error: Interval tidak valid." << std::endl;
+            }
+        }
+        else
+        {
+            std::cout << "Error: Sub-command RIP tidak dikenal. Gunakan: enable, disable, update, show, interval." << std::endl;
+        }
+    }
+
+    void CLI::triggerAutoRipUpdate()
+    {
+        static int cmdCounter = 0;
+        cmdCounter++;
+
+        if (cmdCounter >= ripAutoInterval)
+        {
+            cmdCounter = 0;
+            for (std::map<std::string, std::shared_ptr<Node>>::const_iterator it = nodes.begin();
+                 it != nodes.end(); ++it)
+            {
+                auto router = std::dynamic_pointer_cast<Router>(it->second);
+                if (router && router->isRipEnabled())
+                {
+                    router->triggerRipUpdate();
+                }
+            }
+        }
+        else
+        {
+            for (std::map<std::string, std::shared_ptr<Node>>::const_iterator it = nodes.begin();
+                 it != nodes.end(); ++it)
+            {
+                auto router = std::dynamic_pointer_cast<Router>(it->second);
+                if (router && router->isRipEnabled())
+                {
+                    router->ageRipRoutes();
+                }
+            }
+        }
+    }
+
     void CLI::cmdSetIp(const std::vector<std::string> &args)
     {
         if (args.size() < 3)
@@ -2143,6 +2357,14 @@ namespace magi
         std::cout << "  nat <router> remove <int_ip> <int_port> <tcp|udp> - Hapus NAT mapping" << std::endl;
         std::cout << "  nat <router> clear                               - Clear semua NAT mappings" << std::endl;
         std::cout << std::endl;
+        std::cout << "Dynamic Routing (RIPv2):" << std::endl;
+        std::cout << "  rip enable <router>                              - Aktifkan RIPv2 pada router" << std::endl;
+        std::cout << "  rip disable <router>                             - Nonaktifkan RIPv2 pada router" << std::endl;
+        std::cout << "  rip update [router]                              - Trigger RIP update manual" << std::endl;
+        std::cout << "  rip show [router]                                - Tampilkan RIP routes" << std::endl;
+        std::cout << "  rip interval <n>                                 - Set auto-update interval (default: 3 CLI commands)" << std::endl;
+        std::cout << "  Catatan: RIP update otomatis setiap " << ripAutoInterval << " perintah CLI" << std::endl;
+        std::cout << std::endl;
         std::cout << "Manajemen Topologi:" << std::endl;
         std::cout << "  create <name> <host|switch|router> [jumlah_port] - Membuat node baru" << std::endl;
         std::cout << "  link <device1> <device2> [delay_ms]              - Menghubungkan dua device" << std::endl;
@@ -2181,6 +2403,11 @@ namespace magi
             // Parse dan eksekusi perintah
             std::vector<std::string> args = parseCommand(input);
             executeCommand(args);
+
+            if (running)
+            {
+                triggerAutoRipUpdate();
+            }
 
             if (running)
             {
