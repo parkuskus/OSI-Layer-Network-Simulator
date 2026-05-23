@@ -181,7 +181,6 @@ Umum
 - `help` — daftar perintah
 - `exit` / `quit` — keluar
 
-Catatan: Layanan L7 (DHCP/DNS/HTTP) adalah implementasi didaktik untuk kebutuhan lab dan integrasi (bukan implementasi RFC penuh). Lihat folder `test/` untuk test-suite per milestone.
 
 ## Format Endpoint
 
