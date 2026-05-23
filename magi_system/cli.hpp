@@ -62,6 +62,7 @@ namespace magi
         void cmdACL(const std::vector<std::string> &args);
         void cmdNAT(const std::vector<std::string> &args);
         void cmdRip(const std::vector<std::string> &args);
+        void cmdVisualize(const std::vector<std::string> &args);
         void cmdHelp();
 
         int ripAutoInterval;

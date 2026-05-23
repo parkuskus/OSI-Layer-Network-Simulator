@@ -1,7 +1,7 @@
 #include "layer7/dns_client.hpp"
 
 #include "layer2/host.hpp"
-#include "layer7/udp_socket.hpp"
+#include "layer7/magi_socket.hpp"
 #include "layer3/ip_utils.hpp"
 
 #include <algorithm>
@@ -108,7 +108,7 @@ namespace magi
             attempts = 1;
         }
 
-        std::shared_ptr<UDPSocket> socket = std::make_shared<UDPSocket>(sourceHost.get());
+        std::shared_ptr<MagiSocket> socket = std::make_shared<MagiSocket>(sourceHost.get(), MagiSocket::AF_INET, MagiSocket::SOCK_DGRAM);
         std::string bindIp = iputil::stripCidr(sourceHost->getIpAddress());
         if (bindIp.empty())
         {
@@ -120,8 +120,6 @@ namespace magi
         {
             return findLocalFallbackIp(name, allHosts);
         }
-
-        sourceHost->registerUdpSocket(localPort, socket);
 
         const std::string query = std::string("QUERY:") + name;
         const std::vector<uint8_t> payload(query.begin(), query.end());
@@ -145,7 +143,7 @@ namespace magi
                         std::string ip = responseText.substr(7);
                         if (iputil::isValidIp(ip))
                         {
-                            sourceHost->unregisterUdpSocket(localPort);
+                            socket->close();
                             return ip;
                         }
                     }
@@ -163,7 +161,7 @@ namespace magi
             }
         }
 
-        sourceHost->unregisterUdpSocket(localPort);
+        socket->close();
         return findLocalFallbackIp(name, allHosts);
     }
 

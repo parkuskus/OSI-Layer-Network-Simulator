@@ -103,7 +103,6 @@ private:
     // RIP
     std::vector<RouterRipRoute> ripRoutes;
     bool ripEnabled;
-    int ripUpdateInterval;
     int ripCommandCounter;
     int ripInvalidTimeout;
     int ripFlushTimeout;

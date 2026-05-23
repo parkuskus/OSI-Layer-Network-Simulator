@@ -1,7 +1,7 @@
 #include "layer7/dns_server.hpp"
 
 #include "layer2/host.hpp"
-#include "layer7/udp_socket.hpp"
+#include "layer7/magi_socket.hpp"
 #include "layer3/ip_utils.hpp"
 
 #include <algorithm>
@@ -88,7 +88,7 @@ namespace magi
             return false;
         }
 
-        socket = std::make_shared<UDPSocket>(host);
+        socket = std::make_shared<MagiSocket>(host, MagiSocket::AF_INET, MagiSocket::SOCK_DGRAM);
         std::string bindIp = iputil::stripCidr(host->getIpAddress());
         if (bindIp.empty())
         {
@@ -101,7 +101,6 @@ namespace magi
             return false;
         }
 
-        host->registerUdpSocket(53, socket);
         seedDefaultRecords();
 
         socket->setRecvHandler([this](const std::string &srcIp, uint16_t srcPort, const std::vector<uint8_t> &data)
@@ -119,12 +118,11 @@ namespace magi
             return;
         }
 
-        if (host)
+        if (socket)
         {
-            host->unregisterUdpSocket(53);
+            socket->close();
+            socket.reset();
         }
-
-        socket.reset();
         running = false;
         std::cout << "[DNS] Server stopped." << std::endl;
     }

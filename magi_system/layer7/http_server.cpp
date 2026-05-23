@@ -177,8 +177,7 @@ namespace magi
             return;
         }
 
-        const std::string localIp = iputil::stripCidr(host->getIpAddress());
-        std::shared_ptr<TCPSocket> conn = host->findActiveSocket(localIp, 80, remoteIp, remotePort);
+        std::shared_ptr<MagiSocket> conn = serverSocket->accept();
         if (!conn)
         {
             return;
@@ -187,7 +186,7 @@ namespace magi
         std::cout << "[HTTP Server] Menerima koneksi dari " << remoteIp << ":" << remotePort << std::endl;
 
         // Receive request data
-        std::vector<uint8_t> reqData = conn->getReceivedData();
+        std::vector<uint8_t> reqData = conn->recv(65535);
         if (!reqData.empty())
         {
             std::string requestStr(reqData.begin(), reqData.end());
@@ -197,37 +196,13 @@ namespace magi
             // Generate and send response
             std::string responseStr = generateResponse(requestStr);
             std::vector<uint8_t> respData(responseStr.begin(), responseStr.end());
-            std::shared_ptr<TCPSegment> responseSegment = conn->sendData(respData);
-            if (responseSegment)
-            {
-                IPv4Packet responsePacket;
-                responsePacket.srcIp = localIp;
-                responsePacket.dstIp = remoteIp;
-                responsePacket.protocol = 6;
-                responsePacket.ttl = 64;
-                responsePacket.identification = 0;
-                responsePacket.payload = responseSegment->toBytes();
-                responsePacket.updateChecksum();
-                host->sendIpv4(responsePacket);
-            }
+            conn->send(respData);
 
             std::cout << "[HTTP Server] Mengirimkan HTTP Response (size: " << responseStr.size() << " bytes)" << std::endl;
         }
 
         // Complete teardown
-        std::shared_ptr<TCPSegment> finSegment = conn->initiateClose();
-        if (finSegment)
-        {
-            IPv4Packet finPacket;
-            finPacket.srcIp = localIp;
-            finPacket.dstIp = remoteIp;
-            finPacket.protocol = 6;
-            finPacket.ttl = 64;
-            finPacket.identification = 0;
-            finPacket.payload = finSegment->toBytes();
-            finPacket.updateChecksum();
-            host->sendIpv4(finPacket);
-        }
+        conn->close();
 
         // Re-listen immediately to restore the server socket back to LISTEN state for subsequent queries
         serverSocket->listen(5);
