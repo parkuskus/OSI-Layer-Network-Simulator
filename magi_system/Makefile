@@ -27,7 +27,15 @@ SOURCES := \
     layer3/icmp.cpp \
     layer4/tcp.cpp \
     layer4/udp.cpp \
-    layer4/tcp_socket.cpp
+    layer4/tcp_socket.cpp \
+    layer7/magi_socket.cpp \
+    layer7/udp_socket.cpp \
+    layer7/dhcp_server.cpp \
+    layer7/dhcp_client.cpp \
+    layer7/dns_server.cpp \
+    layer7/dns_client.cpp \
+    layer7/http_server.cpp \
+    layer7/http_client.cpp
 
 # Build artifacts
 OBJECTS := $(patsubst %.cpp,$(BUILD_DIR)/%.o,$(SOURCES))
@@ -43,9 +51,19 @@ $(TARGET): $(OBJECTS)
 	$(CXX) $(OBJECTS) -o $@ $(LDFLAGS)
 
 # Compile with auto-generated dependency files
-$(BUILD_DIR)/%.o: %.cpp
-	@mkdir -p $(dir $@)
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -MMD -MP -c $< -o $@
+
+# Use platform-specific recipe so `make` works both on Windows (cmd) and POSIX shells
+ifeq ($(OS),Windows_NT)
+$(BUILD_DIR)/%.o: %.cpp ; cmd /c if not exist "$(dir $@)" mkdir "$(dir $@)" && $(CXX) $(CPPFLAGS) $(CXXFLAGS) -MMD -MP -c $< -o $@
+
+ 
+
+else
+$(BUILD_DIR)/%.o: %.cpp ; mkdir -p $(dir $@) && $(CXX) $(CPPFLAGS) $(CXXFLAGS) -MMD -MP -c $< -o $@
+
+ 
+
+endif
 
 # Include dependencies when present
 -include $(DEPS)
@@ -53,6 +71,8 @@ $(BUILD_DIR)/%.o: %.cpp
 # Run helpers
 run: $(TARGET)
 	./$(TARGET)
+
+ 
 
 # Convenience alias used in README
 makerun: run
@@ -65,9 +85,7 @@ release: CXXFLAGS += -O2
 release: rebuild
 
 # Cleanup
-clean:
-	rm -rf $(BUILD_DIR)
-	rm -f $(TARGET) $(TARGET).exe
+clean: ; rm -rf $(BUILD_DIR) ; rm -f $(TARGET) $(TARGET).exe
 
 rebuild: clean all
 
