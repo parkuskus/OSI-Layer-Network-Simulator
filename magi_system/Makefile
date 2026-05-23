@@ -27,6 +27,7 @@ SOURCES := \
     layer3/icmp.cpp \
     layer3/acl.cpp \
     layer3/nat.cpp \
+    layer3/rip.cpp \
     layer4/tcp.cpp \
     layer4/udp.cpp \
     layer4/tcp_socket.cpp \
