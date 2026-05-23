@@ -4,11 +4,14 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
 #include "layer3/icmp.hpp"
 #include "layer3/ipv4.hpp"
+#include "layer3/acl.hpp"
+#include "layer3/nat.hpp"
 
 namespace magi {
 
@@ -78,6 +81,13 @@ private:
     std::vector<RouterStaticRoute> staticRoutes;
     std::map<std::string, std::string> arpCache;
     std::map<std::string, std::vector<RouterPendingPacket>> pendingPackets;
+    
+    // ACL and NAT
+    ACLList aclIngress;  // Ingress ACL (applied to incoming packets)
+    ACLList aclEgress;   // Egress ACL (applied to outgoing packets)
+    NATTable natTable;   // NAT address translation table
+    std::set<uint32_t> natInsideInterfaces;  // Ports marked as "inside" for NAT
+    std::set<uint32_t> natOutsideInterfaces; // Ports marked as "outside" for NAT
 
     std::string makeArpKey(uint32_t portNumber, int vlanId, const std::string& ip) const;
     const RouterLogicalInterface* getLogicalInterface(uint32_t portNumber, int vlanId) const;
@@ -95,6 +105,12 @@ private:
     void sendIcmpEchoReply(const IPv4Packet& requestPacket, const ICMPMessage& requestMessage);
     void handleArpFrame(Interface* incomingInterface, const EthernetFrame& frame);
     void handleIpv4Frame(Interface* incomingInterface, const EthernetFrame& frame);
+    
+    // Helper methods for NAT and ACL
+    bool extractPortsFromPayload(const std::vector<uint8_t>& payload, uint8_t protocol, uint16_t& srcPort, uint16_t& dstPort) const;
+    bool applyIngressACL(const IPv4Packet& packet, uint8_t protocol, uint16_t srcPort, uint16_t dstPort) const;
+    bool applyEgressACL(const IPv4Packet& packet, uint8_t protocol, uint16_t srcPort, uint16_t dstPort) const;
+    IPv4Packet applyNATTranslation(const IPv4Packet& packet, bool isOutgoing, uint32_t ingressPort);
 
 public:
     Router(const std::string& name, uint32_t numPorts = 4);
@@ -106,6 +122,29 @@ public:
                   int outVlanId);
     void printRoutingTable() const;
     void printArpCache() const;
+
+    // ACL methods
+    int addIngressACLRule(const ACLRule& rule);
+    int addEgressACLRule(const ACLRule& rule);
+    bool removeIngressACLRule(int ruleId);
+    bool removeEgressACLRule(int ruleId);
+    void clearIngressACL();
+    void clearEgressACL();
+    void printIngressACL() const;
+    void printEgressACL() const;
+
+    // NAT methods
+    int addStaticNAT(const std::string& internalIp, uint16_t internalPort,
+                     const std::string& externalIp, uint16_t externalPort,
+                     uint8_t protocol);
+    int addDynamicNAT(const std::string& internalIp, uint16_t internalPort,
+                      const std::string& externalIp,
+                      uint8_t protocol);
+    bool removeNAT(const std::string& internalIp, uint16_t internalPort, uint8_t protocol);
+    void clearNAT();
+    void printNAT() const;
+    void setNATInside(uint32_t portNumber);
+    void setNATOutside(uint32_t portNumber);
 
     void handleReceive(Interface* incomingInterface, const std::vector<uint8_t>& rawBytes) override;
     std::string getType() const override { return "router"; }

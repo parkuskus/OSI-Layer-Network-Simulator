@@ -25,6 +25,8 @@ SOURCES := \
     layer2/switch.cpp \
     layer3/ipv4.cpp \
     layer3/icmp.cpp \
+    layer3/acl.cpp \
+    layer3/nat.cpp \
     layer4/tcp.cpp \
     layer4/udp.cpp \
     layer4/tcp_socket.cpp \
