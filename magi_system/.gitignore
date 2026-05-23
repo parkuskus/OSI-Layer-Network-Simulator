@@ -1,2 +1,3 @@
 build/
-magi_system.exe
+*.exe
+magi_system
