@@ -1,0 +1,61 @@
+{
+  "hosts": [
+    {
+      "name": "H1",
+      "ip_address": "192.168.1.10/24",
+      "default_gateway": "192.168.1.1"
+    },
+    {
+      "name": "H2",
+      "ip_address": "192.168.1.11/24",
+      "default_gateway": "192.168.1.1"
+    },
+    {
+      "name": "H3",
+      "ip_address": "",
+      "default_gateway": ""
+    }
+  ],
+  "switches": [
+    {
+      "name": "SW1",
+      "num_ports": 8,
+      "vlans": [
+        { "port": 1, "mode": "access", "vlan_id": 1 },
+        { "port": 2, "mode": "access", "vlan_id": 1 },
+        { "port": 3, "mode": "access", "vlan_id": 1 },
+        { "port": 4, "mode": "access", "vlan_id": 1 },
+        { "port": 5, "mode": "access", "vlan_id": 1 },
+        { "port": 6, "mode": "access", "vlan_id": 1 },
+        { "port": 7, "mode": "access", "vlan_id": 1 },
+        { "port": 8, "mode": "access", "vlan_id": 1 }
+      ]
+    }
+  ],
+  "routers": [
+    {
+      "name": "R1",
+      "num_ports": 4,
+      "interfaces": [
+
+      ],
+      "routing_table": [
+
+      ]
+    }
+  ],
+  "links": [
+    {
+      "endpoints": ["H1", "SW1:1"],
+      "delay": 5
+    },
+    {
+      "endpoints": ["H2", "SW1:2"],
+      "delay": 5
+    },
+    {
+      "endpoints": ["H3", "SW1:3"],
+      "delay": 5
+    }
+  ]
+}
