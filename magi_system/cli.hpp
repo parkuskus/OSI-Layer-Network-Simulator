@@ -84,6 +84,9 @@ namespace magi
 
         void run();
 
+        std::string executeLine(const std::string &input, bool autoRipUpdate = true);
+        std::string exportTopologyJson() const;
+
         void stop() { running = false; }
 
         bool isRunning() const { return running; }

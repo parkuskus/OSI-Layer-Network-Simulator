@@ -23,6 +23,120 @@ namespace magi
     {
     }
 
+    std::string CLI::executeLine(const std::string &input, bool autoRipUpdate)
+    {
+        std::ostringstream capturedOutput;
+        std::streambuf *previousBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
+
+        try
+        {
+            std::vector<std::string> args = parseCommand(input);
+            executeCommand(args);
+            if (running && autoRipUpdate)
+            {
+                triggerAutoRipUpdate();
+            }
+        }
+        catch (const std::exception &e)
+        {
+            std::cout << "Error: " << e.what() << std::endl;
+        }
+        catch (...)
+        {
+            std::cout << "Error: Perintah gagal diproses." << std::endl;
+        }
+
+        std::cout.rdbuf(previousBuffer);
+        return capturedOutput.str();
+    }
+
+    std::string CLI::exportTopologyJson() const
+    {
+        std::ostringstream out;
+        out << "{\n";
+
+        out << "  \"hosts\": [\n";
+        bool firstHost = true;
+        for (std::map<std::string, std::shared_ptr<Node>>::const_iterator it = nodes.begin(); it != nodes.end(); ++it)
+        {
+            if (it->second->getType() == "host")
+            {
+                if (!firstHost)
+                    out << ",\n";
+                firstHost = false;
+                out << it->second->toJson();
+            }
+        }
+        out << "\n  ],\n";
+
+        out << "  \"switches\": [\n";
+        bool firstSwitch = true;
+        for (std::map<std::string, std::shared_ptr<Node>>::const_iterator it = nodes.begin(); it != nodes.end(); ++it)
+        {
+            if (it->second->getType() == "switch")
+            {
+                if (!firstSwitch)
+                    out << ",\n";
+                firstSwitch = false;
+                out << it->second->toJson();
+            }
+        }
+        out << "\n  ],\n";
+
+        out << "  \"routers\": [\n";
+        bool firstRouter = true;
+        for (std::map<std::string, std::shared_ptr<Node>>::const_iterator it = nodes.begin(); it != nodes.end(); ++it)
+        {
+            if (it->second->getType() == "router")
+            {
+                if (!firstRouter)
+                    out << ",\n";
+                firstRouter = false;
+                out << it->second->toJson();
+            }
+        }
+        out << "\n  ],\n";
+
+        out << "  \"links\": [\n";
+        for (size_t i = 0; i < connections.size(); ++i)
+        {
+            if (i > 0)
+                out << ",\n";
+            const LinkConnection &conn = connections[i];
+            std::map<std::string, std::shared_ptr<Node>>::const_iterator nodeA = nodes.find(conn.nodeAName);
+            std::map<std::string, std::shared_ptr<Node>>::const_iterator nodeB = nodes.find(conn.nodeBName);
+            const bool nodeAIsHost = (nodeA != nodes.end() && nodeA->second->getType() == "host");
+            const bool nodeBIsHost = (nodeB != nodes.end() && nodeB->second->getType() == "host");
+
+            out << "    {\n";
+            out << "      \"endpoints\": [\"" << conn.nodeAName;
+            if (conn.portA != 1 || !nodeAIsHost)
+            {
+                out << ":" << conn.portA;
+            }
+            out << "\", \"" << conn.nodeBName;
+            if (conn.portB != 1 || !nodeBIsHost)
+            {
+                out << ":" << conn.portB;
+            }
+            out << "\"],\n";
+            out << "      \"delay\": " << conn.delay;
+            if (conn.mtu != 1500)
+            {
+                out << ",\n";
+                out << "      \"mtu\": " << conn.mtu << "\n";
+            }
+            else
+            {
+                out << "\n";
+            }
+            out << "    }";
+        }
+        out << "\n  ]\n";
+        out << "}\n";
+        return out.str();
+    }
+
     std::string CLI::trim(const std::string &str)
     {
         size_t first = str.find_first_not_of(" \t\n\r");
@@ -163,6 +277,48 @@ namespace magi
                     cmdRoute(routeArgs);
                     return true;
                 }
+                if (subcmd == "acl")
+                {
+                    std::vector<std::string> aclArgs;
+                    aclArgs.push_back("acl");
+                    aclArgs.push_back(entityName);
+                    aclArgs.insert(aclArgs.end(), extraArgs.begin(), extraArgs.end());
+                    cmdACL(aclArgs);
+                    return true;
+                }
+                if (subcmd == "nat")
+                {
+                    std::vector<std::string> natArgs;
+                    natArgs.push_back("nat");
+                    natArgs.push_back(entityName);
+                    natArgs.insert(natArgs.end(), extraArgs.begin(), extraArgs.end());
+                    cmdNAT(natArgs);
+                    return true;
+                }
+                if (subcmd == "rip")
+                {
+                    std::vector<std::string> ripArgs;
+                    ripArgs.push_back("rip");
+
+                    if (extraArgs.empty())
+                    {
+                        ripArgs.push_back("show");
+                        ripArgs.push_back(entityName);
+                        cmdRip(ripArgs);
+                        return true;
+                    }
+
+                    std::string ripAction = extraArgs[0];
+                    std::transform(ripAction.begin(), ripAction.end(), ripAction.begin(), ::tolower);
+                    if (ripAction == "enable" || ripAction == "disable" || ripAction == "update" || ripAction == "show")
+                    {
+                        ripArgs.push_back(ripAction);
+                        ripArgs.push_back(entityName);
+                        ripArgs.insert(ripArgs.end(), extraArgs.begin() + 1, extraArgs.end());
+                        cmdRip(ripArgs);
+                        return true;
+                    }
+                }
 
                 if (subcmd == "tcp_connect" && extraArgs.size() >= 2)
                 {
@@ -205,7 +361,15 @@ namespace magi
                 if (subcmd == "dhcp_discover")
                 {
                     std::vector<std::string> dhcpArgs = {"dhcp_discover", entityName};
+                    dhcpArgs.insert(dhcpArgs.end(), extraArgs.begin(), extraArgs.end());
                     cmdDhcpDiscover(dhcpArgs);
+                    return true;
+                }
+                if (subcmd == "dhcp_server" && !extraArgs.empty())
+                {
+                    std::vector<std::string> dhcpServerArgs = {"dhcp_server", entityName};
+                    dhcpServerArgs.insert(dhcpServerArgs.end(), extraArgs.begin(), extraArgs.end());
+                    cmdDhcpServer(dhcpServerArgs);
                     return true;
                 }
                 if (subcmd == "dns_server" && !extraArgs.empty())
@@ -234,8 +398,8 @@ namespace magi
 
             // Format 2 (alias): <subcommand> <entity> [args]
             if ((cmd == "mac" || cmd == "arp" || cmd == "ping" || cmd == "traceroute" ||
-                 cmd == "tcp_connect" || cmd == "udp_send" || cmd == "http_get" || cmd == "http_server" ||
-                 cmd == "dhcp_discover" || cmd == "dns_server") &&
+                 cmd == "tcp_connect" || cmd == "tcp_close" || cmd == "udp_send" || cmd == "http_get" || cmd == "http_server" ||
+                 cmd == "dhcp_discover" || cmd == "dhcp_server" || cmd == "dns_server") &&
                 args.size() >= 2)
             {
                 std::vector<std::string> extraArgs;
@@ -2726,6 +2890,7 @@ namespace magi
         std::cout << "  <host> http_get <url>                            - Meminta halaman web statis" << std::endl;
         std::cout << "  <host> http_server start [file]                  - Menjalankan web server" << std::endl;
         std::cout << "  <host> http_server stop                          - Mematikan web server" << std::endl;
+        std::cout << "  <host> dhcp_server start|stop                    - Menjalankan atau menghentikan DHCP server" << std::endl;
         std::cout << "  <host> dhcp_discover [ms] [n]                    - Meminta alokasi IP otomatis dengan retry" << std::endl;
         std::cout << "  <host> dns_server start|stop                     - Menjalankan atau menghentikan DNS server" << std::endl;
         std::cout << std::endl;
@@ -2746,11 +2911,13 @@ namespace magi
         std::cout << "  acl <router> ingress|egress [list]               - Tampilkan ACL rules" << std::endl;
         std::cout << "  acl <router> ingress|egress add <action> <src_ip> <dst_ip> [proto] [src_port] [dst_port]" << std::endl;
         std::cout << "    Contoh: acl R1 ingress add deny 192.168.1.0/24 10.0.0.0/8 tcp 80 80" << std::endl;
+        std::cout << "    Alias:  R1 acl ingress add deny 192.168.1.0/24 10.0.0.0/8 tcp 80 80" << std::endl;
         std::cout << "  acl <router> ingress|egress remove <rule_id>    - Hapus ACL rule" << std::endl;
         std::cout << "  acl <router> ingress|egress clear                - Clear semua ACL rules" << std::endl;
         std::cout << std::endl;
         std::cout << "Network Address Translation (NAT):" << std::endl;
         std::cout << "  nat <router> [list]                              - Tampilkan NAT mappings" << std::endl;
+        std::cout << "    Alias:  R1 nat [list]" << std::endl;
         std::cout << "  nat <router> static <int_ip> <int_port> <ext_ip> <ext_port> <tcp|udp>" << std::endl;
         std::cout << "    Contoh: nat R1 static 192.168.1.100 80 203.0.113.1 8080 tcp" << std::endl;
         std::cout << "  nat <router> dynamic <int_ip> <int_port> <ext_ip> <tcp|udp>" << std::endl;
@@ -2762,6 +2929,7 @@ namespace magi
         std::cout << std::endl;
         std::cout << "Dynamic Routing (RIPv2):" << std::endl;
         std::cout << "  rip enable <router>                              - Aktifkan RIPv2 pada router" << std::endl;
+        std::cout << "    Alias:  R1 rip enable" << std::endl;
         std::cout << "  rip disable <router>                             - Nonaktifkan RIPv2 pada router" << std::endl;
         std::cout << "  rip update [router]                              - Trigger RIP update manual" << std::endl;
         std::cout << "  rip show [router]                                - Tampilkan RIP routes" << std::endl;
