@@ -8,6 +8,7 @@ Milestone 4 socket wrapper smoke test
 
 #include "../test_common.hpp"
 
+#include "cli.hpp"
 #include "core/link.hpp"
 #include "core/interface.hpp"
 #include "layer2/host.hpp"
@@ -99,6 +100,31 @@ bool runMilestone4Tests()
     magi_test::expect(stats, mappedInternalPort == 5000, "NAT dynamic reverse mapping restores internal port");
     magi_test::expect(stats, nat.removeMapping("10.0.0.20", 5000, 17), "NAT removeMapping succeeds for dynamic mapping");
     magi_test::expect(stats, !nat.lookupInternal("10.0.0.20", 5000, 17, mappedExternalIp, mappedExternalPort), "NAT dynamic mapping disappears after removal");
+
+    magi_test::printSection("Milestone 4 - CLI alias coverage");
+    magi::CLI cli;
+    const std::string createRouterLog = cli.executeLine("create router R1 2", false);
+    magi_test::expect(stats, magi_test::contains(createRouterLog, "Router 'R1' dengan 2 port berhasil dibuat."), "CLI creates router for alias coverage");
+
+    const std::string aclAliasAddLog = cli.executeLine("R1 acl ingress add deny 192.168.1.0/24 10.0.1.0/24 icmp", false);
+    magi_test::expect(stats, magi_test::contains(aclAliasAddLog, "ACL rule ditambahkan dengan ID:"), "CLI accepts router-first ACL add syntax");
+
+    const std::string aclAliasListLog = cli.executeLine("R1 acl ingress", false);
+    magi_test::expect(stats, magi_test::contains(aclAliasListLog, "[ACL Rules]"), "CLI accepts router-first ACL list syntax");
+    magi_test::expect(stats, magi_test::contains(aclAliasListLog, "deny"), "CLI ACL alias list shows inserted deny rule");
+
+    const std::string natAliasAddLog = cli.executeLine("R1 nat static 192.168.1.10 80 203.0.113.1 8080 tcp", false);
+    magi_test::expect(stats, magi_test::contains(natAliasAddLog, "Static NAT mapping ditambahkan."), "CLI accepts router-first NAT static syntax");
+
+    const std::string natAliasListLog = cli.executeLine("R1 nat", false);
+    magi_test::expect(stats, magi_test::contains(natAliasListLog, "[NAT Mappings]"), "CLI accepts router-first NAT list syntax");
+    magi_test::expect(stats, magi_test::contains(natAliasListLog, "203.0.113.1:8080"), "CLI NAT alias list shows inserted mapping");
+
+    const std::string ripAliasEnableLog = cli.executeLine("R1 rip enable", false);
+    magi_test::expect(stats, magi_test::contains(ripAliasEnableLog, "RIP diaktifkan pada router 'R1'"), "CLI accepts router-first RIP enable syntax");
+
+    const std::string ripAliasShowLog = cli.executeLine("R1 rip show", false);
+    magi_test::expect(stats, magi_test::contains(ripAliasShowLog, "[RIP Routes: R1]"), "CLI accepts router-first RIP show syntax");
 
     magi_test::printSection("Milestone 4 - router ACL/NAT helpers");
     magi::Router router("RB", 2);
