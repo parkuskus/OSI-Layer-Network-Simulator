@@ -155,6 +155,43 @@ namespace
         return stats.failed == 0;
     }
 
+    bool testHostPingRetryAfterVlanRestore(magi_test::TestStats &stats)
+    {
+        magi_test::printSection("Milestone 1 - ping retry after VLAN restore");
+
+        magi::Host hostA("H1", "10.0.0.2/24", "10.0.0.1");
+        magi::Host hostB("H2", "10.0.0.3/24", "10.0.0.1");
+        magi::Switch sw("SW3", 2);
+
+        hostA.getInterface(1)->setMacAddress("00:00:00:00:11:01");
+        hostB.getInterface(1)->setMacAddress("00:00:00:00:11:02");
+
+        sw.setAccessVlan(1, 10);
+        sw.setAccessVlan(2, 20);
+
+        magi::Link::create(hostA.getInterface(1), sw.getInterface(1));
+        magi::Link::create(hostB.getInterface(1), sw.getInterface(2));
+
+        const std::string blockedOutput = magi_test::captureStdout([&]()
+                                                                   { hostA.sendPing("10.0.0.3"); });
+        magi_test::expect(stats,
+                          magi_test::contains(blockedOutput, "Request timeout"),
+                          "Ping times out when hosts are isolated by VLAN");
+
+        sw.setAccessVlan(2, 10);
+
+        const std::string restoredOutput = magi_test::captureStdout([&]()
+                                                                    { hostA.sendPing("10.0.0.3"); });
+        magi_test::expect(stats,
+                          magi_test::contains(restoredOutput, "Reply from 10.0.0.3"),
+                          "Ping succeeds after VLAN is restored");
+        magi_test::expect(stats,
+                          !magi_test::contains(restoredOutput, "Request timeout"),
+                          "Retry does not stay stuck in ARP timeout after VLAN restore");
+
+        return stats.failed == 0;
+    }
+
 } // namespace
 
 bool runMilestone1Tests()
@@ -168,6 +205,7 @@ bool runMilestone1Tests()
     ok = testPacketSerialization(stats) && ok;
     ok = testSwitchVlanAndMacLearning(stats) && ok;
     ok = testHostPingSameSubnet(stats) && ok;
+    ok = testHostPingRetryAfterVlanRestore(stats) && ok;
 
     std::cout << std::endl
               << "Milestone 1 summary: " << (stats.checks - stats.failed)

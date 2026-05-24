@@ -2,6 +2,7 @@
 #define MAGI_LAYER7_MAGI_SOCKET_HPP
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -11,7 +12,7 @@ namespace magi
 
     class Host;
     class TCPSocket;
-    class TCPSegment;
+    struct TCPSegment;
     class UDPSocket;
 
     class MagiSocket : public std::enable_shared_from_this<MagiSocket>
@@ -29,6 +30,10 @@ namespace magi
         bool connect(const std::string &ip, uint16_t port);
         size_t send(const std::vector<uint8_t> &data);
         std::vector<uint8_t> recv(size_t bufferSize);
+        size_t sendto(const std::string &dstIp, uint16_t dstPort, const std::vector<uint8_t> &data);
+        std::vector<uint8_t> recvfrom(std::string &outSrcIp, uint16_t &outSrcPort, size_t bufferSize);
+        using RecvHandler = std::function<void(const std::string &srcIp, uint16_t srcPort, const std::vector<uint8_t> &data)>;
+        void setRecvHandler(RecvHandler handler);
         bool close();
 
         std::string getLocalIp() const { return localIp; }

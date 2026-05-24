@@ -88,7 +88,22 @@ std::string Switch::toJson() const {
     ss << "    {\n";
     ss << "      \"name\": \"" << name << "\",\n";
     ss << "      \"num_ports\": " << numPorts << ",\n";
-    ss << "      \"vlans\": []\n";
+    ss << "      \"vlans\": [\n";
+    bool first = true;
+    for (std::map<int, VlanConfig>::const_iterator it = vlanConfig.begin(); it != vlanConfig.end(); ++it) {
+        if (!first) {
+            ss << ",\n";
+        }
+        first = false;
+        ss << "        { \"port\": " << it->first << ", \"mode\": ";
+        if (it->second.mode == PortMode::ACCESS) {
+            ss << "\"access\", \"vlan_id\": " << it->second.accessVlan;
+        } else {
+            ss << "\"trunk\", \"vlan_id\": " << it->second.nativeVlan;
+        }
+        ss << " }";
+    }
+    ss << "\n      ]\n";
     ss << "    }";
     return ss.str();
 }

@@ -41,11 +41,6 @@ namespace magi
         if (!udpTransport && host)
         {
             udpTransport = std::make_shared<UDPSocket>(host);
-            // If already bound, register with host
-            if (localPort != 0)
-            {
-                host->registerUdpSocket(localPort, udpTransport);
-            }
         }
     }
 
@@ -83,6 +78,16 @@ namespace magi
         localIp = normalizeIp(ip);
         localPort = port;
         bound = iputil::isValidIp(localIp) && localPort != 0;
+        if (bound && sockType == SOCK_DGRAM)
+        {
+            ensureUdpTransport();
+            if (!udpTransport || !udpTransport->bind(localIp, localPort))
+            {
+                bound = false;
+                return false;
+            }
+            host->registerUdpSocket(localPort, udpTransport);
+        }
         return bound;
     }
 
@@ -237,8 +242,68 @@ namespace magi
         return data;
     }
 
+    size_t MagiSocket::sendto(const std::string &dstIp, uint16_t dstPort, const std::vector<uint8_t> &data)
+    {
+        if (sockType != SOCK_DGRAM || !host)
+        {
+            return 0;
+        }
+
+        if (!bound)
+        {
+            const std::string primary = normalizeIp(host->getIpAddress());
+            if (!bind(primary.empty() ? "0.0.0.0" : primary, 49152))
+            {
+                return 0;
+            }
+        }
+
+        ensureUdpTransport();
+        if (!udpTransport)
+        {
+            return 0;
+        }
+
+        return udpTransport->sendto(dstIp, dstPort, data);
+    }
+
+    std::vector<uint8_t> MagiSocket::recvfrom(std::string &outSrcIp, uint16_t &outSrcPort, size_t bufferSize)
+    {
+        if (sockType != SOCK_DGRAM || !udpTransport)
+        {
+            return {};
+        }
+
+        return udpTransport->recvfrom(outSrcIp, outSrcPort, bufferSize);
+    }
+
+    void MagiSocket::setRecvHandler(RecvHandler handler)
+    {
+        if (sockType != SOCK_DGRAM)
+        {
+            return;
+        }
+
+        ensureUdpTransport();
+        if (udpTransport)
+        {
+            udpTransport->setRecvHandler(handler);
+        }
+    }
+
     bool MagiSocket::close()
     {
+        if (sockType == SOCK_DGRAM)
+        {
+            if (host && localPort != 0)
+            {
+                host->unregisterUdpSocket(localPort);
+            }
+            udpTransport.reset();
+            bound = false;
+            return true;
+        }
+
         if (sockType != SOCK_STREAM || !tcpTransport)
         {
             return false;

@@ -10,7 +10,7 @@
 namespace magi {
 
 class Host;
-class UDPSocket;
+class MagiSocket;
 
 class DHCPServer {
 public:
@@ -22,7 +22,7 @@ public:
 
 private:
     Host *host;
-    std::shared_ptr<UDPSocket> socket;
+    std::shared_ptr<MagiSocket> socket;
     std::vector<std::string> pool;
     std::map<std::string, std::string> leases; // mac -> ip
 

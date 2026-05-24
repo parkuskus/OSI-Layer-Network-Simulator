@@ -10,7 +10,7 @@
 namespace magi
 {
     class Host;
-    class UDPSocket;
+    class MagiSocket;
 
     class DNSServer
     {
@@ -28,7 +28,7 @@ namespace magi
 
     private:
         Host *host;
-        std::shared_ptr<UDPSocket> socket;
+        std::shared_ptr<MagiSocket> socket;
         bool running;
         std::map<std::string, std::string> records;
 

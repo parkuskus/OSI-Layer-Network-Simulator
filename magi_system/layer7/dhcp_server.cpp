@@ -1,6 +1,6 @@
 #include "layer7/dhcp_server.hpp"
 #include "layer2/host.hpp"
-#include "layer7/udp_socket.hpp"
+#include "layer7/magi_socket.hpp"
 #include "layer3/ip_utils.hpp"
 
 #include <iostream>
@@ -42,15 +42,13 @@ namespace magi {
         if (!host)
             return false;
 
-        socket = std::make_shared<UDPSocket>(host);
+        socket = std::make_shared<MagiSocket>(host, MagiSocket::AF_INET, MagiSocket::SOCK_DGRAM);
         std::string bindIp = magi::iputil::stripCidr(host->getIpAddress());
         if (bindIp.empty())
             bindIp = "0.0.0.0";
 
         if (!socket->bind(bindIp, 67))
             return false;
-
-        host->registerUdpSocket(67, socket);
 
         buildPoolFromHost();
 
@@ -64,9 +62,9 @@ namespace magi {
 
     void DHCPServer::stop()
     {
-        if (socket && host)
+        if (socket)
         {
-            host->unregisterUdpSocket(67);
+            socket->close();
             socket.reset();
         }
     }

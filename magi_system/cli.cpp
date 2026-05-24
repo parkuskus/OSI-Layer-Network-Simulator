@@ -12,6 +12,7 @@
 #include <fstream>
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 #include <iomanip>
 
@@ -20,6 +21,120 @@ namespace magi
 
     CLI::CLI() : running(true), ripAutoInterval(3)
     {
+    }
+
+    std::string CLI::executeLine(const std::string &input, bool autoRipUpdate)
+    {
+        std::ostringstream capturedOutput;
+        std::streambuf *previousBuffer = std::cout.rdbuf(capturedOutput.rdbuf());
+
+        try
+        {
+            std::vector<std::string> args = parseCommand(input);
+            executeCommand(args);
+            if (running && autoRipUpdate)
+            {
+                triggerAutoRipUpdate();
+            }
+        }
+        catch (const std::exception &e)
+        {
+            std::cout << "Error: " << e.what() << std::endl;
+        }
+        catch (...)
+        {
+            std::cout << "Error: Perintah gagal diproses." << std::endl;
+        }
+
+        std::cout.rdbuf(previousBuffer);
+        return capturedOutput.str();
+    }
+
+    std::string CLI::exportTopologyJson() const
+    {
+        std::ostringstream out;
+        out << "{\n";
+
+        out << "  \"hosts\": [\n";
+        bool firstHost = true;
+        for (std::map<std::string, std::shared_ptr<Node>>::const_iterator it = nodes.begin(); it != nodes.end(); ++it)
+        {
+            if (it->second->getType() == "host")
+            {
+                if (!firstHost)
+                    out << ",\n";
+                firstHost = false;
+                out << it->second->toJson();
+            }
+        }
+        out << "\n  ],\n";
+
+        out << "  \"switches\": [\n";
+        bool firstSwitch = true;
+        for (std::map<std::string, std::shared_ptr<Node>>::const_iterator it = nodes.begin(); it != nodes.end(); ++it)
+        {
+            if (it->second->getType() == "switch")
+            {
+                if (!firstSwitch)
+                    out << ",\n";
+                firstSwitch = false;
+                out << it->second->toJson();
+            }
+        }
+        out << "\n  ],\n";
+
+        out << "  \"routers\": [\n";
+        bool firstRouter = true;
+        for (std::map<std::string, std::shared_ptr<Node>>::const_iterator it = nodes.begin(); it != nodes.end(); ++it)
+        {
+            if (it->second->getType() == "router")
+            {
+                if (!firstRouter)
+                    out << ",\n";
+                firstRouter = false;
+                out << it->second->toJson();
+            }
+        }
+        out << "\n  ],\n";
+
+        out << "  \"links\": [\n";
+        for (size_t i = 0; i < connections.size(); ++i)
+        {
+            if (i > 0)
+                out << ",\n";
+            const LinkConnection &conn = connections[i];
+            std::map<std::string, std::shared_ptr<Node>>::const_iterator nodeA = nodes.find(conn.nodeAName);
+            std::map<std::string, std::shared_ptr<Node>>::const_iterator nodeB = nodes.find(conn.nodeBName);
+            const bool nodeAIsHost = (nodeA != nodes.end() && nodeA->second->getType() == "host");
+            const bool nodeBIsHost = (nodeB != nodes.end() && nodeB->second->getType() == "host");
+
+            out << "    {\n";
+            out << "      \"endpoints\": [\"" << conn.nodeAName;
+            if (conn.portA != 1 || !nodeAIsHost)
+            {
+                out << ":" << conn.portA;
+            }
+            out << "\", \"" << conn.nodeBName;
+            if (conn.portB != 1 || !nodeBIsHost)
+            {
+                out << ":" << conn.portB;
+            }
+            out << "\"],\n";
+            out << "      \"delay\": " << conn.delay;
+            if (conn.mtu != 1500)
+            {
+                out << ",\n";
+                out << "      \"mtu\": " << conn.mtu << "\n";
+            }
+            else
+            {
+                out << "\n";
+            }
+            out << "    }";
+        }
+        out << "\n  ]\n";
+        out << "}\n";
+        return out.str();
     }
 
     std::string CLI::trim(const std::string &str)
@@ -109,6 +224,10 @@ namespace magi
         {
             cmdRip(args);
         }
+        else if (cmd == "visualize")
+        {
+            cmdVisualize(args);
+        }
         else if (cmd == "help" || cmd == "?")
         {
             cmdHelp();
@@ -158,6 +277,48 @@ namespace magi
                     cmdRoute(routeArgs);
                     return true;
                 }
+                if (subcmd == "acl")
+                {
+                    std::vector<std::string> aclArgs;
+                    aclArgs.push_back("acl");
+                    aclArgs.push_back(entityName);
+                    aclArgs.insert(aclArgs.end(), extraArgs.begin(), extraArgs.end());
+                    cmdACL(aclArgs);
+                    return true;
+                }
+                if (subcmd == "nat")
+                {
+                    std::vector<std::string> natArgs;
+                    natArgs.push_back("nat");
+                    natArgs.push_back(entityName);
+                    natArgs.insert(natArgs.end(), extraArgs.begin(), extraArgs.end());
+                    cmdNAT(natArgs);
+                    return true;
+                }
+                if (subcmd == "rip")
+                {
+                    std::vector<std::string> ripArgs;
+                    ripArgs.push_back("rip");
+
+                    if (extraArgs.empty())
+                    {
+                        ripArgs.push_back("show");
+                        ripArgs.push_back(entityName);
+                        cmdRip(ripArgs);
+                        return true;
+                    }
+
+                    std::string ripAction = extraArgs[0];
+                    std::transform(ripAction.begin(), ripAction.end(), ripAction.begin(), ::tolower);
+                    if (ripAction == "enable" || ripAction == "disable" || ripAction == "update" || ripAction == "show")
+                    {
+                        ripArgs.push_back(ripAction);
+                        ripArgs.push_back(entityName);
+                        ripArgs.insert(ripArgs.end(), extraArgs.begin() + 1, extraArgs.end());
+                        cmdRip(ripArgs);
+                        return true;
+                    }
+                }
 
                 if (subcmd == "tcp_connect" && extraArgs.size() >= 2)
                 {
@@ -200,7 +361,15 @@ namespace magi
                 if (subcmd == "dhcp_discover")
                 {
                     std::vector<std::string> dhcpArgs = {"dhcp_discover", entityName};
+                    dhcpArgs.insert(dhcpArgs.end(), extraArgs.begin(), extraArgs.end());
                     cmdDhcpDiscover(dhcpArgs);
+                    return true;
+                }
+                if (subcmd == "dhcp_server" && !extraArgs.empty())
+                {
+                    std::vector<std::string> dhcpServerArgs = {"dhcp_server", entityName};
+                    dhcpServerArgs.insert(dhcpServerArgs.end(), extraArgs.begin(), extraArgs.end());
+                    cmdDhcpServer(dhcpServerArgs);
                     return true;
                 }
                 if (subcmd == "dns_server" && !extraArgs.empty())
@@ -229,8 +398,8 @@ namespace magi
 
             // Format 2 (alias): <subcommand> <entity> [args]
             if ((cmd == "mac" || cmd == "arp" || cmd == "ping" || cmd == "traceroute" ||
-                 cmd == "tcp_connect" || cmd == "udp_send" || cmd == "http_get" || cmd == "http_server" ||
-                 cmd == "dhcp_discover" || cmd == "dns_server") &&
+                 cmd == "tcp_connect" || cmd == "tcp_close" || cmd == "udp_send" || cmd == "http_get" || cmd == "http_server" ||
+                 cmd == "dhcp_discover" || cmd == "dhcp_server" || cmd == "dns_server") &&
                 args.size() >= 2)
             {
                 std::vector<std::string> extraArgs;
@@ -845,13 +1014,37 @@ namespace magi
     {
         if (args.size() < 3)
         {
-            std::cout << "Penggunaan: create <name> <host|switch|router> [jumlah_port]" << std::endl;
+            std::cout << "Penggunaan: create <host|switch|router> <name> [jumlah_port]" << std::endl;
             return;
         }
 
-        std::string name = args[1];
-        std::string type = args[2];
-        std::transform(type.begin(), type.end(), type.begin(), ::tolower);
+        std::string first = args[1];
+        std::string second = args[2];
+        std::transform(first.begin(), first.end(), first.begin(), ::tolower);
+        std::transform(second.begin(), second.end(), second.begin(), ::tolower);
+
+        const bool firstIsType = (first == "host" || first == "switch" || first == "router");
+        const bool secondIsType = (second == "host" || second == "switch" || second == "router");
+
+        std::string name;
+        std::string type;
+        if (firstIsType && !secondIsType)
+        {
+            type = first;
+            name = args[2];
+        }
+        else if (!firstIsType && secondIsType)
+        {
+            // Backward-compatible alias: create <name> <type>
+            name = args[1];
+            type = second;
+        }
+        else
+        {
+            std::cout << "Error: Format create tidak valid." << std::endl;
+            std::cout << "Penggunaan: create <host|switch|router> <name> [jumlah_port]" << std::endl;
+            return;
+        }
 
         if (nodes.find(name) != nodes.end())
         {
@@ -866,7 +1059,7 @@ namespace magi
             if (args.size() >= 4)
             {
                 std::cout << "Error: Host hanya dapat memiliki 1 interface." << std::endl;
-                std::cout << "Penggunaan: create <name> host" << std::endl;
+                std::cout << "Penggunaan: create host <name>" << std::endl;
                 return;
             }
             node = std::make_shared<Host>(name);
@@ -877,7 +1070,20 @@ namespace magi
             uint32_t numPorts = 24;
             if (args.size() >= 4)
             {
-                numPorts = std::stoul(args[3]);
+                try
+                {
+                    numPorts = static_cast<uint32_t>(std::stoul(args[3]));
+                }
+                catch (...)
+                {
+                    std::cout << "Error: jumlah_port switch tidak valid." << std::endl;
+                    return;
+                }
+                if (numPorts == 0)
+                {
+                    std::cout << "Error: jumlah_port switch harus lebih dari 0." << std::endl;
+                    return;
+                }
             }
             node = std::make_shared<Switch>(name, numPorts);
             std::cout << "Switch '" << name << "' dengan " << numPorts << " port berhasil dibuat." << std::endl;
@@ -887,7 +1093,20 @@ namespace magi
             uint32_t numPorts = 4;
             if (args.size() >= 4)
             {
-                numPorts = std::stoul(args[3]);
+                try
+                {
+                    numPorts = static_cast<uint32_t>(std::stoul(args[3]));
+                }
+                catch (...)
+                {
+                    std::cout << "Error: jumlah_port router tidak valid." << std::endl;
+                    return;
+                }
+                if (numPorts == 0)
+                {
+                    std::cout << "Error: jumlah_port router harus lebih dari 0." << std::endl;
+                    return;
+                }
             }
             node = std::make_shared<Router>(name, numPorts);
             std::cout << "Router '" << name << "' dengan " << numPorts << " port berhasil dibuat." << std::endl;
@@ -907,14 +1126,21 @@ namespace magi
         if (colonPos != std::string::npos)
         {
             nodeName = endpoint.substr(0, colonPos);
-            port = std::stoul(endpoint.substr(colonPos + 1));
+            try
+            {
+                port = static_cast<uint32_t>(std::stoul(endpoint.substr(colonPos + 1)));
+            }
+            catch (...)
+            {
+                return false;
+            }
         }
         else
         {
             nodeName = endpoint;
             port = 1;
         }
-        return true;
+        return !nodeName.empty() && port > 0;
     }
 
     bool CLI::parsePortVlanSpec(const std::string &spec, uint32_t &port, int &vlanId)
@@ -1014,8 +1240,12 @@ namespace magi
         std::string nodeAName, nodeBName;
         uint32_t portA, portB;
 
-        parseEndpoint(endpoint1, nodeAName, portA);
-        parseEndpoint(endpoint2, nodeBName, portB);
+        if (!parseEndpoint(endpoint1, nodeAName, portA) ||
+            !parseEndpoint(endpoint2, nodeBName, portB))
+        {
+            std::cout << "Error: Format endpoint tidak valid. Gunakan NodeName atau NodeName:Port." << std::endl;
+            return;
+        }
 
         auto nodeA = findNode(nodeAName);
         auto nodeB = findNode(nodeBName);
@@ -1094,8 +1324,12 @@ namespace magi
         std::string nodeAName, nodeBName;
         uint32_t portA, portB;
 
-        parseEndpoint(endpoint1, nodeAName, portA);
-        parseEndpoint(endpoint2, nodeBName, portB);
+        if (!parseEndpoint(endpoint1, nodeAName, portA) ||
+            !parseEndpoint(endpoint2, nodeBName, portB))
+        {
+            std::cout << "Error: Format endpoint tidak valid. Gunakan NodeName atau NodeName:Port." << std::endl;
+            return;
+        }
 
         bool found = false;
         for (auto it = connections.begin(); it != connections.end(); ++it)
@@ -1234,8 +1468,16 @@ namespace magi
                 file << ":" << conn.portB;
             }
             file << "\"],\n";
-            file << "      \"delay\": " << conn.delay << "\n";
-            file << "      ,\"mtu\": " << conn.mtu << "\n";
+            file << "      \"delay\": " << conn.delay;
+            if (conn.mtu != 1500)
+            {
+                file << ",\n";
+                file << "      \"mtu\": " << conn.mtu << "\n";
+            }
+            else
+            {
+                file << "\n";
+            }
             file << "    }";
         }
         file << "\n  ]\n";
@@ -1256,19 +1498,26 @@ namespace magi
         if (colonPos == std::string::npos)
             return "";
 
-        size_t quoteStart = line.find('"', colonPos);
-        if (quoteStart == std::string::npos)
+        size_t valueStart = line.find_first_not_of(" \t", colonPos + 1);
+        if (valueStart == std::string::npos)
         {
-            size_t valueStart = line.find_first_not_of(" \t", colonPos + 1);
-            size_t valueEnd = line.find_first_of(",}\n", valueStart);
-            return trim(line.substr(valueStart, valueEnd - valueStart));
+            return "";
         }
 
-        size_t quoteEnd = line.find('"', quoteStart + 1);
-        if (quoteEnd == std::string::npos)
-            return "";
+        if (line[valueStart] == '"')
+        {
+            size_t quoteEnd = line.find('"', valueStart + 1);
+            if (quoteEnd == std::string::npos)
+                return "";
+            return line.substr(valueStart + 1, quoteEnd - valueStart - 1);
+        }
 
-        return line.substr(quoteStart + 1, quoteEnd - quoteStart - 1);
+        size_t valueEnd = line.find_first_of(",}]\n", valueStart);
+        if (valueEnd == std::string::npos)
+        {
+            valueEnd = line.size();
+        }
+        return trim(line.substr(valueStart, valueEnd - valueStart));
     }
 
     bool CLI::parseJsonFile(const std::string &filename)
@@ -1314,9 +1563,26 @@ namespace magi
                     std::string ip = "";
                     std::string gateway = "";
 
-                    // Baca beberapa baris untuk data host
-                    while (std::getline(file, line) && line.find("}") == std::string::npos)
+                    if (line.find("\"name\"") != std::string::npos)
                     {
+                        name = extractJsonValue(line, "name");
+                    }
+                    if (line.find("\"ip_address\"") != std::string::npos)
+                    {
+                        ip = extractJsonValue(line, "ip_address");
+                    }
+                    if (line.find("\"default_gateway\"") != std::string::npos)
+                    {
+                        gateway = extractJsonValue(line, "default_gateway");
+                    }
+
+                    // Baca beberapa baris untuk data host
+                    while (line.find("}") == std::string::npos)
+                    {
+                        if (!std::getline(file, line))
+                        {
+                            break;
+                        }
                         if (line.find("\"name\"") != std::string::npos)
                         {
                             name = extractJsonValue(line, "name");
@@ -1341,9 +1607,19 @@ namespace magi
                 {
                     std::string name = "";
                     uint32_t numPorts = 24;
-
-                    while (std::getline(file, line) && line.find("}") == std::string::npos)
+                    struct VlanEntry
                     {
+                        int port;
+                        std::string mode;
+                        int vlanId;
+                    };
+                    std::vector<VlanEntry> vlanEntries;
+
+                    int braceDepth = 1;
+                    while (braceDepth > 0 && std::getline(file, line))
+                    {
+                        line = trim(line);
+
                         if (line.find("\"name\"") != std::string::npos)
                         {
                             name = extractJsonValue(line, "name");
@@ -1354,11 +1630,55 @@ namespace magi
                             if (!portsStr.empty())
                                 numPorts = std::stoul(portsStr);
                         }
+                        else if (line.find("\"port\"") != std::string::npos &&
+                                 line.find("\"mode\"") != std::string::npos)
+                        {
+                            VlanEntry entry;
+                            entry.port = 0;
+                            entry.mode = extractJsonValue(line, "mode");
+                            entry.vlanId = 1;
+
+                            std::string portStr = extractJsonValue(line, "port");
+                            std::string vlanStr = extractJsonValue(line, "vlan_id");
+                            try
+                            {
+                                entry.port = std::stoi(portStr);
+                                if (!vlanStr.empty())
+                                {
+                                    entry.vlanId = std::stoi(vlanStr);
+                                }
+                            }
+                            catch (...)
+                            {
+                                entry.port = 0;
+                            }
+
+                            if (entry.port > 0 && !entry.mode.empty())
+                            {
+                                vlanEntries.push_back(entry);
+                            }
+                        }
+
+                        braceDepth += static_cast<int>(std::count(line.begin(), line.end(), '{'));
+                        braceDepth -= static_cast<int>(std::count(line.begin(), line.end(), '}'));
                     }
 
                     if (!name.empty())
                     {
                         auto sw = std::make_shared<Switch>(name, numPorts);
+                        for (size_t i = 0; i < vlanEntries.size(); ++i)
+                        {
+                            std::string mode = vlanEntries[i].mode;
+                            std::transform(mode.begin(), mode.end(), mode.begin(), ::tolower);
+                            if (mode == "access")
+                            {
+                                sw->setAccessVlan(vlanEntries[i].port, vlanEntries[i].vlanId);
+                            }
+                            else if (mode == "trunk")
+                            {
+                                sw->setTrunkVlan(vlanEntries[i].port, vlanEntries[i].vlanId);
+                            }
+                        }
                         nodes[name] = sw;
                     }
                 }
@@ -1390,9 +1710,20 @@ namespace magi
                             if (!portsStr.empty())
                                 numPorts = std::stoul(portsStr);
                         }
-                        else if (line.find("\"endpoint\"") != std::string::npos)
+                        else if ((line.find("\"port\"") != std::string::npos ||
+                                  line.find("\"endpoint\"") != std::string::npos) &&
+                                 line.find("\"ip_address\"") != std::string::npos)
                         {
-                            std::string endpoint = extractJsonValue(line, "endpoint");
+                            std::string endpoint = extractJsonValue(line, "port");
+                            if (endpoint.empty())
+                            {
+                                endpoint = extractJsonValue(line, "endpoint");
+                            }
+                            std::string vlan = extractJsonValue(line, "vlan_id");
+                            if (!vlan.empty() && endpoint.find('.') == std::string::npos)
+                            {
+                                endpoint += "." + vlan;
+                            }
                             std::string ipAddress = extractJsonValue(line, "ip_address");
                             if (!endpoint.empty() && !ipAddress.empty())
                             {
@@ -1404,7 +1735,16 @@ namespace magi
                             RouteConfig routeConfig;
                             routeConfig.destination = extractJsonValue(line, "destination");
                             routeConfig.nextHop = extractJsonValue(line, "next_hop");
-                            routeConfig.outInterface = extractJsonValue(line, "out_interface");
+                            routeConfig.outInterface = extractJsonValue(line, "interface");
+                            if (routeConfig.outInterface.empty())
+                            {
+                                routeConfig.outInterface = extractJsonValue(line, "out_interface");
+                            }
+                            std::string vlan = extractJsonValue(line, "vlan_id");
+                            if (!vlan.empty() && routeConfig.outInterface.find('.') == std::string::npos)
+                            {
+                                routeConfig.outInterface += "." + vlan;
+                            }
                             if (!routeConfig.destination.empty() &&
                                 !routeConfig.nextHop.empty() &&
                                 !routeConfig.outInterface.empty())
@@ -1450,22 +1790,20 @@ namespace magi
                     uint32_t delay = 0;
                     uint32_t mtu = 1500;
 
-                    while (std::getline(file, line) && line.find("}") == std::string::npos)
+                    auto parseLinkLine = [&](const std::string &linkLine)
                     {
-                        if (line.find("\"endpoints\"") != std::string::npos)
+                        if (linkLine.find("\"endpoints\"") != std::string::npos)
                         {
-                            // Parse array endpoints
-                            size_t bracketStart = line.find('[');
-                            size_t bracketEnd = line.find(']');
+                            size_t bracketStart = linkLine.find('[');
+                            size_t bracketEnd = linkLine.find(']');
                             if (bracketStart != std::string::npos && bracketEnd != std::string::npos)
                             {
-                                std::string arrayContent = line.substr(bracketStart + 1, bracketEnd - bracketStart - 1);
+                                std::string arrayContent = linkLine.substr(bracketStart + 1, bracketEnd - bracketStart - 1);
                                 std::stringstream ss(arrayContent);
                                 std::string endpoint;
                                 while (std::getline(ss, endpoint, ','))
                                 {
                                     endpoint = trim(endpoint);
-                                    // Remove quotes
                                     if (endpoint.size() >= 2 && endpoint[0] == '"' && endpoint[endpoint.size() - 1] == '"')
                                     {
                                         endpoint = endpoint.substr(1, endpoint.size() - 2);
@@ -1477,18 +1815,25 @@ namespace magi
                                 }
                             }
                         }
-                        else if (line.find("\"delay\"") != std::string::npos)
+                        if (linkLine.find("\"delay\"") != std::string::npos)
                         {
-                            std::string delayStr = extractJsonValue(line, "delay");
+                            std::string delayStr = extractJsonValue(linkLine, "delay");
                             if (!delayStr.empty())
                                 delay = std::stoul(delayStr);
                         }
-                        else if (line.find("\"mtu\"") != std::string::npos)
+                        if (linkLine.find("\"mtu\"") != std::string::npos)
                         {
-                            std::string mtuStr = extractJsonValue(line, "mtu");
+                            std::string mtuStr = extractJsonValue(linkLine, "mtu");
                             if (!mtuStr.empty())
                                 mtu = std::stoul(mtuStr);
                         }
+                    };
+
+                    parseLinkLine(line);
+
+                    while (line.find("}") == std::string::npos && std::getline(file, line))
+                    {
+                        parseLinkLine(line);
                     }
 
                     if (mtu < 68)
@@ -2200,6 +2545,169 @@ namespace magi
         }
     }
 
+    void CLI::cmdVisualize(const std::vector<std::string> &args)
+    {
+        std::string filename = "topology.svg";
+        if (args.size() >= 2)
+        {
+            filename = args[1];
+        }
+
+        std::ofstream file(filename);
+        if (!file.is_open())
+        {
+            std::cout << "Error: Tidak dapat membuka file '" << filename << "' untuk menulis." << std::endl;
+            return;
+        }
+
+        auto svgEscape = [](const std::string &value) -> std::string
+        {
+            std::string out;
+            for (size_t i = 0; i < value.size(); ++i)
+            {
+                switch (value[i])
+                {
+                case '&':
+                    out += "&amp;";
+                    break;
+                case '<':
+                    out += "&lt;";
+                    break;
+                case '>':
+                    out += "&gt;";
+                    break;
+                case '"':
+                    out += "&quot;";
+                    break;
+                default:
+                    out += value[i];
+                    break;
+                }
+            }
+            return out;
+        };
+
+        const double width = 900.0;
+        const double height = 650.0;
+        const double centerX = width / 2.0;
+        const double centerY = height / 2.0;
+        const double radius = (nodes.size() <= 2) ? 180.0 : 245.0;
+        const double pi = 3.14159265358979323846;
+
+        std::vector<std::string> nodeNames;
+        for (std::map<std::string, std::shared_ptr<Node>>::const_iterator it = nodes.begin(); it != nodes.end(); ++it)
+        {
+            nodeNames.push_back(it->first);
+        }
+
+        std::map<std::string, std::pair<double, double>> positions;
+        if (nodeNames.empty())
+        {
+            file << "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"900\" height=\"650\" viewBox=\"0 0 900 650\">\n";
+            file << "  <rect width=\"900\" height=\"650\" fill=\"#f8fafc\"/>\n";
+            file << "  <text x=\"450\" y=\"325\" text-anchor=\"middle\" font-family=\"Arial\" font-size=\"24\" fill=\"#334155\">Topology is empty</text>\n";
+            file << "</svg>\n";
+            std::cout << "Topologi visual berhasil diekspor ke '" << filename << "'." << std::endl;
+            return;
+        }
+
+        for (size_t i = 0; i < nodeNames.size(); ++i)
+        {
+            double x = centerX;
+            double y = centerY;
+            if (nodeNames.size() > 1)
+            {
+                const double angle = (2.0 * pi * static_cast<double>(i) / static_cast<double>(nodeNames.size())) - (pi / 2.0);
+                x = centerX + radius * std::cos(angle);
+                y = centerY + radius * std::sin(angle);
+            }
+            positions[nodeNames[i]] = std::make_pair(x, y);
+        }
+
+        file << "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"900\" height=\"650\" viewBox=\"0 0 900 650\">\n";
+        file << "  <rect width=\"900\" height=\"650\" fill=\"#f8fafc\"/>\n";
+        file << "  <text x=\"32\" y=\"44\" font-family=\"Arial\" font-size=\"26\" font-weight=\"700\" fill=\"#0f172a\">MAGI Topology</text>\n";
+        file << "  <text x=\"32\" y=\"70\" font-family=\"Arial\" font-size=\"14\" fill=\"#475569\">Nodes: "
+             << nodeNames.size() << " | Links: " << connections.size() << "</text>\n";
+
+        for (size_t i = 0; i < connections.size(); ++i)
+        {
+            const LinkConnection &conn = connections[i];
+            std::map<std::string, std::pair<double, double>>::const_iterator a = positions.find(conn.nodeAName);
+            std::map<std::string, std::pair<double, double>>::const_iterator b = positions.find(conn.nodeBName);
+            if (a == positions.end() || b == positions.end())
+            {
+                continue;
+            }
+
+            const double x1 = a->second.first;
+            const double y1 = a->second.second;
+            const double x2 = b->second.first;
+            const double y2 = b->second.second;
+            const double mx = (x1 + x2) / 2.0;
+            const double my = (y1 + y2) / 2.0;
+
+            file << "  <line x1=\"" << x1 << "\" y1=\"" << y1 << "\" x2=\"" << x2 << "\" y2=\"" << y2
+                 << "\" stroke=\"#64748b\" stroke-width=\"3\"/>\n";
+            file << "  <text x=\"" << mx << "\" y=\"" << (my - 8.0)
+                 << "\" text-anchor=\"middle\" font-family=\"Arial\" font-size=\"12\" fill=\"#334155\">"
+                 << svgEscape(conn.nodeAName) << ":" << conn.portA << " - "
+                 << svgEscape(conn.nodeBName) << ":" << conn.portB;
+            if (conn.delay > 0 || conn.mtu != 1500)
+            {
+                file << " (";
+                if (conn.delay > 0)
+                {
+                    file << conn.delay << "ms";
+                }
+                if (conn.delay > 0 && conn.mtu != 1500)
+                {
+                    file << ", ";
+                }
+                if (conn.mtu != 1500)
+                {
+                    file << "mtu " << conn.mtu;
+                }
+                file << ")";
+            }
+            file << "</text>\n";
+        }
+
+        for (size_t i = 0; i < nodeNames.size(); ++i)
+        {
+            const std::string &nodeName = nodeNames[i];
+            std::shared_ptr<Node> node = nodes[nodeName];
+            const std::string type = node ? node->getType() : "node";
+            std::string color = "#2563eb";
+            if (type == "host")
+            {
+                color = "#16a34a";
+            }
+            else if (type == "switch")
+            {
+                color = "#f59e0b";
+            }
+            else if (type == "router")
+            {
+                color = "#dc2626";
+            }
+
+            const double x = positions[nodeName].first;
+            const double y = positions[nodeName].second;
+            file << "  <circle cx=\"" << x << "\" cy=\"" << y << "\" r=\"42\" fill=\"" << color
+                 << "\" stroke=\"#0f172a\" stroke-width=\"2\"/>\n";
+            file << "  <text x=\"" << x << "\" y=\"" << (y + 4.0)
+                 << "\" text-anchor=\"middle\" font-family=\"Arial\" font-size=\"17\" font-weight=\"700\" fill=\"#ffffff\">"
+                 << svgEscape(nodeName) << "</text>\n";
+            file << "  <text x=\"" << x << "\" y=\"" << (y + 60.0)
+                 << "\" text-anchor=\"middle\" font-family=\"Arial\" font-size=\"13\" fill=\"#334155\">"
+                 << svgEscape(type) << "</text>\n";
+        }
+
+        file << "</svg>\n";
+        std::cout << "Topologi visual berhasil diekspor ke '" << filename << "'." << std::endl;
+    }
+
     void CLI::cmdSetIp(const std::vector<std::string> &args)
     {
         if (args.size() < 3)
@@ -2382,6 +2890,7 @@ namespace magi
         std::cout << "  <host> http_get <url>                            - Meminta halaman web statis" << std::endl;
         std::cout << "  <host> http_server start [file]                  - Menjalankan web server" << std::endl;
         std::cout << "  <host> http_server stop                          - Mematikan web server" << std::endl;
+        std::cout << "  <host> dhcp_server start|stop                    - Menjalankan atau menghentikan DHCP server" << std::endl;
         std::cout << "  <host> dhcp_discover [ms] [n]                    - Meminta alokasi IP otomatis dengan retry" << std::endl;
         std::cout << "  <host> dns_server start|stop                     - Menjalankan atau menghentikan DNS server" << std::endl;
         std::cout << std::endl;
@@ -2402,11 +2911,13 @@ namespace magi
         std::cout << "  acl <router> ingress|egress [list]               - Tampilkan ACL rules" << std::endl;
         std::cout << "  acl <router> ingress|egress add <action> <src_ip> <dst_ip> [proto] [src_port] [dst_port]" << std::endl;
         std::cout << "    Contoh: acl R1 ingress add deny 192.168.1.0/24 10.0.0.0/8 tcp 80 80" << std::endl;
+        std::cout << "    Alias:  R1 acl ingress add deny 192.168.1.0/24 10.0.0.0/8 tcp 80 80" << std::endl;
         std::cout << "  acl <router> ingress|egress remove <rule_id>    - Hapus ACL rule" << std::endl;
         std::cout << "  acl <router> ingress|egress clear                - Clear semua ACL rules" << std::endl;
         std::cout << std::endl;
         std::cout << "Network Address Translation (NAT):" << std::endl;
         std::cout << "  nat <router> [list]                              - Tampilkan NAT mappings" << std::endl;
+        std::cout << "    Alias:  R1 nat [list]" << std::endl;
         std::cout << "  nat <router> static <int_ip> <int_port> <ext_ip> <ext_port> <tcp|udp>" << std::endl;
         std::cout << "    Contoh: nat R1 static 192.168.1.100 80 203.0.113.1 8080 tcp" << std::endl;
         std::cout << "  nat <router> dynamic <int_ip> <int_port> <ext_ip> <tcp|udp>" << std::endl;
@@ -2418,6 +2929,7 @@ namespace magi
         std::cout << std::endl;
         std::cout << "Dynamic Routing (RIPv2):" << std::endl;
         std::cout << "  rip enable <router>                              - Aktifkan RIPv2 pada router" << std::endl;
+        std::cout << "    Alias:  R1 rip enable" << std::endl;
         std::cout << "  rip disable <router>                             - Nonaktifkan RIPv2 pada router" << std::endl;
         std::cout << "  rip update [router]                              - Trigger RIP update manual" << std::endl;
         std::cout << "  rip show [router]                                - Tampilkan RIP routes" << std::endl;
@@ -2429,6 +2941,7 @@ namespace magi
         std::cout << "  link <device1> <device2> [delay_ms]              - Menghubungkan dua device" << std::endl;
         std::cout << "  unlink <device1> <device2>                       - Memutuskan koneksi" << std::endl;
         std::cout << "  topology                                         - Menampilkan topologi" << std::endl;
+        std::cout << "  visualize [file.svg]                            - Ekspor visualisasi topologi ke SVG" << std::endl;
         std::cout << "  show <node_name>                                 - Menampilkan info node" << std::endl;
         std::cout << std::endl;
         std::cout << "File Operations:" << std::endl;
@@ -2461,7 +2974,18 @@ namespace magi
 
             // Parse dan eksekusi perintah
             std::vector<std::string> args = parseCommand(input);
-            executeCommand(args);
+            try
+            {
+                executeCommand(args);
+            }
+            catch (const std::exception &e)
+            {
+                std::cout << "Error: " << e.what() << std::endl;
+            }
+            catch (...)
+            {
+                std::cout << "Error: Perintah gagal diproses." << std::endl;
+            }
 
             if (running)
             {

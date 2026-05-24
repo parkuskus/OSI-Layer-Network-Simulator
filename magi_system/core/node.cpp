@@ -154,7 +154,7 @@ namespace magi
 
     Router::Router(const std::string &name, uint32_t numPorts)
         : Node(name), numPorts(numPorts), nextIpIdentification(1),
-          ripEnabled(false), ripUpdateInterval(3), ripCommandCounter(0),
+          ripEnabled(false), ripCommandCounter(0),
           ripInvalidTimeout(6), ripFlushTimeout(9)
     {
         for (uint32_t i = 0; i < numPorts; ++i)
@@ -1270,12 +1270,12 @@ namespace magi
                 ss << ",\n";
             }
             first = false;
-            ss << "        {\"endpoint\": \"" << it->second.portNumber;
+            ss << "        {\"port\": " << it->second.portNumber;
             if (it->second.vlanId != iputil::kUntaggedVlan)
             {
-                ss << "." << it->second.vlanId;
+                ss << ", \"vlan_id\": " << it->second.vlanId;
             }
-            ss << "\", \"ip_address\": \"" << it->second.cidr << "\"}";
+            ss << ", \"ip_address\": \"" << it->second.cidr << "\"}";
         }
         ss << "\n      ],\n";
         ss << "      \"routing_table\": [\n";
@@ -1289,12 +1289,12 @@ namespace magi
             first = false;
             ss << "        {\"destination\": \"" << staticRoutes[i].destinationCidr
                << "\", \"next_hop\": \"" << staticRoutes[i].nextHopIp
-               << "\", \"out_interface\": \"" << staticRoutes[i].outPortNumber;
+               << "\", \"interface\": " << staticRoutes[i].outPortNumber;
             if (staticRoutes[i].outVlanId != iputil::kUntaggedVlan)
             {
-                ss << "." << staticRoutes[i].outVlanId;
+                ss << ", \"vlan_id\": " << staticRoutes[i].outVlanId;
             }
-            ss << "\"}";
+            ss << "}";
         }
         ss << "\n      ]\n";
         ss << "    }";

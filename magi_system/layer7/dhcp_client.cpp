@@ -1,5 +1,5 @@
 #include "layer7/dhcp_client.hpp"
-#include "layer7/udp_socket.hpp"
+#include "layer7/magi_socket.hpp"
 #include "layer2/host.hpp"
 #include "core/interface.hpp"
 #include "layer3/ip_utils.hpp"
@@ -20,7 +20,7 @@ std::string DHCPClient::discover(Host *host, int timeoutMs, int maxAttempts)
     if (maxAttempts <= 0)
         maxAttempts = 1;
 
-    std::shared_ptr<UDPSocket> sock = std::make_shared<UDPSocket>(host);
+    std::shared_ptr<MagiSocket> sock = std::make_shared<MagiSocket>(host, MagiSocket::AF_INET, MagiSocket::SOCK_DGRAM);
 
     std::string bindIp = host->getIpAddress().empty() ? "0.0.0.0" : iputil::stripCidr(host->getIpAddress());
     if (!sock->bind(bindIp, 68))
@@ -28,8 +28,6 @@ std::string DHCPClient::discover(Host *host, int timeoutMs, int maxAttempts)
         std::cout << "[DHCPClient] Failed to bind UDP socket to port 68" << std::endl;
         return "";
     }
-
-    host->registerUdpSocket(68, sock);
 
     // Build discover payload: DISCOVER:<mac>
     std::string mac = "";
@@ -88,7 +86,7 @@ std::string DHCPClient::discover(Host *host, int timeoutMs, int maxAttempts)
                                 // Apply IP to host
                                 host->setIpAddress(ip + "/24");
                                 host->printInfo();
-                                host->unregisterUdpSocket(68);
+                                sock->close();
                                 std::cout << "[DHCPClient] Lease acquired: " << ip << std::endl;
                                 return ip;
                             }
@@ -114,7 +112,7 @@ std::string DHCPClient::discover(Host *host, int timeoutMs, int maxAttempts)
         }
     }
 
-    host->unregisterUdpSocket(68);
+    sock->close();
     std::cout << "[DHCPClient] Discovery failed after " << maxAttempts << " attempts" << std::endl;
     return "";
 }

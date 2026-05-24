@@ -20,7 +20,7 @@ namespace magi
     class Interface;
     class Packet;
     class TCPSocket;
-    class TCPSegment;
+    struct TCPSegment;
     class HTTPServer;
     class DHCPServer;
     class DNSServer;

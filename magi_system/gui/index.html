@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MAGI System - Network Simulation Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <nav class="topbar">
+    <div class="brand-group">
+      <div class="brand">MAGI System</div>
+    </div>
+    <div class="toolbar" aria-label="Simulation controls">
+      <button class="icon-btn" id="loadTopologyBtn" title="Load topology JSON">
+        <span class="material-symbols-outlined">upload_file</span>
+      </button>
+      <button class="icon-btn" id="saveSnapshotBtn" title="Save topology JSON">
+        <span class="material-symbols-outlined">save</span>
+      </button>
+      <button class="icon-btn" id="resetBtn" title="Reload topology">
+        <span class="material-symbols-outlined">restart_alt</span>
+      </button>
+    </div>
+  </nav>
+
+  <section class="subbar">
+    <div class="project-meta">
+      <span class="project-name" id="projectName">Black Romantic Cihuy</span>
+    </div>
+    <div class="search-wrap">
+      <span class="material-symbols-outlined">search</span>
+      <input id="searchInput" type="search" placeholder="Search nodes..." autocomplete="off" />
+    </div>
+  </section>
+
+  <div class="workspace">
+    <aside class="side-rail" aria-label="Device palette">
+      <div class="rail-section">
+        <button class="rail-item" data-tool="host" title="Host">
+          <span class="material-symbols-outlined">desktop_windows</span>
+          <span>Host</span>
+        </button>
+        <button class="rail-item active" data-tool="switch" title="Switch">
+          <span class="material-symbols-outlined">hub</span>
+          <span>Switch</span>
+        </button>
+        <button class="rail-item" data-tool="router" title="Router">
+          <span class="material-symbols-outlined">router</span>
+          <span>Router</span>
+        </button>
+        <button class="rail-item" data-tool="server" title="Server">
+          <span class="material-symbols-outlined">dns</span>
+          <span>Server</span>
+        </button>
+        <button class="rail-item" data-tool="firewall" title="ACL/NAT">
+          <span class="material-symbols-outlined">security</span>
+          <span>ACL/NAT</span>
+        </button>
+      </div>
+      <div class="rail-footer">
+        <button class="add-node" id="addNodeBtn" title="Add device from selected palette">
+          <span class="material-symbols-outlined">add</span>
+          <span>Add Node</span>
+        </button>
+        <button class="rail-item rail-clear" id="clearCanvasBtn" title="Clear topology" disabled>
+          <span class="material-symbols-outlined">clear_all</span>
+          <span>Clear</span>
+        </button>
+        <button class="rail-item rail-danger" id="deleteNodeBtn" title="Delete selected device" disabled>
+          <span class="material-symbols-outlined">delete</span>
+          <span>Delete</span>
+        </button>
+      </div>
+    </aside>
+
+    <main class="main-stage">
+      <section class="stage-toolbar">
+        <div class="mode-group" role="toolbar" aria-label="Workspace mode">
+          <button class="mode-btn active" data-mode="select" id="modeSelectBtn">Select</button>
+          <button class="mode-btn" data-mode="deploy" id="modeDeployBtn">Deploy</button>
+          <button class="mode-btn" data-mode="link" id="modeLinkBtn">Link</button>
+        </div>
+        <div class="stage-meta">
+          <span class="stage-chip" id="activePalette">Palette: Switch</span>
+          <span class="stage-chip muted" id="modeStatus">Mode: Select</span>
+          <span class="stage-chip wide muted" id="canvasHint">Click a node to inspect, configure, or run services.</span>
+        </div>
+        <div class="link-config hidden" id="linkConfigPanel" aria-label="Link defaults">
+          <label class="link-field">
+            <span>Delay</span>
+            <input id="linkDelayInput" type="number" min="0" step="1" value="5" />
+            <small>ms</small>
+          </label>
+          <label class="link-field">
+            <span>MTU</span>
+            <input id="linkMtuInput" type="number" min="576" step="1" value="1500" />
+          </label>
+        </div>
+        <div class="stage-actions">
+          <button class="ghost-btn" id="exportSvgBtn">SVG</button>
+          <button class="ghost-btn" id="reloadTopoBtn">Reload</button>
+        </div>
+      </section>
+      <section class="canvas-wrap" id="canvasWrap">
+        <svg class="link-layer" id="linkLayer" aria-label="Topology links"></svg>
+        <div class="node-layer" id="nodeLayer" aria-label="Topology nodes"></div>
+        <div class="canvas-controls">
+          <button class="icon-btn" id="zoomInBtn" title="Zoom in"><span class="material-symbols-outlined">zoom_in</span></button>
+          <button class="icon-btn" id="zoomOutBtn" title="Zoom out"><span class="material-symbols-outlined">zoom_out</span></button>
+          <button class="icon-btn" id="fitBtn" title="Fit topology"><span class="material-symbols-outlined">filter_center_focus</span></button>
+        </div>
+        <div class="protocol-legend">
+          <span><i class="dot arp"></i>ARP</span>
+          <span><i class="dot icmp"></i>ICMP</span>
+          <span><i class="dot tcp"></i>TCP</span>
+          <span><i class="dot udp"></i>UDP</span>
+          <span><i class="dot http"></i>HTTP</span>
+        </div>
+        <div class="canvas-banner" id="canvasBanner">Live backend topology</div>
+      </section>
+
+      <section class="log-panel">
+        <header class="panel-header">
+          <div>
+            <span class="material-symbols-outlined">list_alt</span>
+            <strong>Event Log</strong>
+          </div>
+          <div class="panel-actions">
+            <button class="ghost-btn" id="clearLogBtn" title="Clear log">Clear Log</button>
+          </div>
+        </header>
+        <div class="command-center">
+          <select id="commandPreset" aria-label="Command preset">
+            <option value="">Command preset...</option>
+            <optgroup label="Topology">
+              <option value="topology">Show topology</option>
+              <option value="create host H3">Create host</option>
+              <option value="create switch SW2 8">Create switch</option>
+              <option value="create router R2 4">Create router</option>
+              <option value="link H1 SW1:1 5 1500">Link devices</option>
+              <option value="unlink H1 SW1:1">Unlink devices</option>
+              <option value="show H1">Show node</option>
+              <option value="SW1 mac">Show MAC table</option>
+              <option value="H1 arp">Show host ARP</option>
+              <option value="R1 arp">Show router ARP</option>
+              <option value="save topology.json">Save topology</option>
+              <option value="load topology.json">Load topology</option>
+              <option value="visualize topology.svg">Export SVG</option>
+            </optgroup>
+            <optgroup label="Addressing & VLAN">
+              <option value="setip H1 192.168.1.10/24">Set host IP</option>
+              <option value="setip R1:1 192.168.1.1/24">Set router interface</option>
+              <option value="setgw H1 192.168.1.1">Set gateway</option>
+              <option value="vlan access SW1 1 10">VLAN access</option>
+              <option value="vlan trunk SW1 24 1">VLAN trunk</option>
+              <option value="R1 route">Show routes</option>
+              <option value="route add R1 10.0.0.0/24 192.168.1.2 1">Add static route</option>
+            </optgroup>
+            <optgroup label="Protocols">
+              <option value="H1 ping 192.168.1.11">ICMP ping</option>
+              <option value="H1 traceroute 192.168.1.11">Traceroute</option>
+              <option value="H1 tcp_connect 192.168.1.11 80">TCP connect</option>
+              <option value="H1 tcp_close 192.168.1.11 80">TCP close</option>
+              <option value="H1 udp_send 192.168.1.11 5000 5001 MAGI_UDP_TEST">UDP send</option>
+              <option value="H1 http_get http://192.168.1.11/">HTTP GET</option>
+              <option value="H2 http_server start index.html">HTTP server start</option>
+              <option value="H2 http_server stop">HTTP server stop</option>
+              <option value="H2 dhcp_server start">DHCP server start</option>
+              <option value="H2 dhcp_server stop">DHCP server stop</option>
+              <option value="H1 dhcp_discover 3000 3">DHCP discover</option>
+              <option value="H2 dns_server start">DNS server start</option>
+              <option value="H2 dns_server stop">DNS server stop</option>
+            </optgroup>
+            <optgroup label="Security & Routing Bonus">
+              <option value="acl R1 ingress list">ACL list</option>
+              <option value="acl R1 egress list">ACL egress list</option>
+              <option value="acl R1 ingress add deny 192.168.1.0/24 10.0.0.0/8 tcp 80 80">ACL add</option>
+              <option value="acl R1 ingress remove 1">ACL remove</option>
+              <option value="acl R1 ingress clear">ACL clear</option>
+              <option value="nat R1 list">NAT list</option>
+              <option value="nat R1 static 192.168.1.10 80 203.0.113.1 8080 tcp">Static NAT</option>
+              <option value="nat R1 dynamic 192.168.1.10 443 203.0.113.1 tcp">Dynamic NAT</option>
+              <option value="nat R1 inside 1">NAT inside</option>
+              <option value="nat R1 outside 2">NAT outside</option>
+              <option value="nat R1 remove 192.168.1.10 80 tcp">NAT remove</option>
+              <option value="nat R1 clear">NAT clear</option>
+              <option value="rip enable R1">RIP enable</option>
+              <option value="rip disable R1">RIP disable</option>
+              <option value="rip update">RIP update</option>
+              <option value="rip show">RIP show</option>
+              <option value="rip interval 3">RIP interval</option>
+            </optgroup>
+          </select>
+          <div class="quick-actions">
+            <button class="ghost-btn" data-command="help">Help</button>
+            <button class="ghost-btn" data-command="topology">Topology</button>
+            <button class="ghost-btn" data-command="H1 ping 192.168.1.11">Ping</button>
+            <button class="ghost-btn" data-command="R1 route">Routes</button>
+            <button class="ghost-btn" data-command="nat R1 list">NAT</button>
+            <button class="ghost-btn" id="refreshBackendBtn">Refresh</button>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table class="log-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Source</th>
+                <th>Type</th>
+                <th>Message</th>
+              </tr>
+            </thead>
+            <tbody id="logBody"></tbody>
+          </table>
+        </div>
+        <div class="command-row">
+          <span>Magi&gt;</span>
+          <textarea id="commandInput" rows="2" spellcheck="false" aria-label="Magi command"></textarea>
+          <button class="pill-btn primary" id="sendCommandBtn">Send</button>
+        </div>
+      </section>
+    </main>
+
+    <aside class="inspector">
+      <div class="inspector-resizer" id="inspectorResizer" aria-hidden="true"></div>
+      <header class="inspector-head">
+        <div class="node-avatar" id="inspectorIcon">
+          <span class="material-symbols-outlined">router</span>
+        </div>
+        <div class="inspector-actions">
+          <button class="icon-btn small" id="configShortcutBtn" title="Open configuration"><span class="material-symbols-outlined">tune</span></button>
+          <button class="icon-btn small" id="inspectShortcutBtn" title="Inspect live details"><span class="material-symbols-outlined">terminal</span></button>
+          <button class="icon-btn small mobile-only" id="closeInspectorBtn" title="Close inspector"><span class="material-symbols-outlined">close</span></button>
+        </div>
+        <h1 id="inspectorTitle">Router R1</h1>
+        <p id="inspectorSubtitle">router | active</p>
+      </header>
+
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-tab="overview">Overview</button>
+        <button class="tab" data-tab="config">Config</button>
+        <button class="tab" data-tab="inspect">Inspect</button>
+        <button class="tab" data-tab="services">Services</button>
+      </div>
+
+      <div class="inspector-body" id="inspectorBody"></div>
+    </aside>
+  </div>
+
+  <footer class="statusbar">
+    <span id="engineStatus">Simulation: Ready</span>
+    <span id="packetCounter">Packets: 0</span>
+    <span id="topologyFile">Topology: topology.json</span>
+    <span id="selectedTool">Tool: Select</span>
+  </footer>
+
+  <input id="fileInput" type="file" accept="application/json,.json" hidden />
+  <script src="app.js"></script>
+</body>
+</html>
