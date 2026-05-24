@@ -9,7 +9,9 @@ LDFLAGS :=
 
 # Targets and directories
 TARGET := magi_system
+WEB_TARGET := magi_web
 BUILD_DIR := build
+PORT ?= 8080
 
 # Source files
 SOURCES := \
@@ -43,6 +45,9 @@ SOURCES := \
 # Build artifacts
 OBJECTS := $(patsubst %.cpp,$(BUILD_DIR)/%.o,$(SOURCES))
 DEPS := $(OBJECTS:.o=.d)
+WEB_SOURCES := $(filter-out main.cpp,$(SOURCES)) web_main.cpp web/server.cpp
+WEB_OBJECTS := $(patsubst %.cpp,$(BUILD_DIR)/%.o,$(WEB_SOURCES))
+DEPS += $(WEB_OBJECTS:.o=.d)
 TEST_TARGET := unit_tests.exe
 TEST_SOURCES := \
     test/test_main.cpp \
@@ -73,7 +78,7 @@ TEST_SOURCES := \
     layer7/http_server.cpp \
     layer7/http_client.cpp
 
-.PHONY: all run makerun clean rebuild debug release run-win clean-win mingw32-makerun test
+.PHONY: all run web run-web makerun clean rebuild debug release run-win clean-win mingw32-makerun test
 
 # Default target
 all: $(TARGET)
@@ -81,6 +86,9 @@ all: $(TARGET)
 # Link executable
 $(TARGET): $(OBJECTS)
 	$(CXX) $(OBJECTS) -o $@ $(LDFLAGS)
+
+$(WEB_TARGET): $(WEB_OBJECTS)
+	$(CXX) $(WEB_OBJECTS) -o $@ $(LDFLAGS)
 
 # Compile with auto-generated dependency files
 
@@ -104,6 +112,11 @@ endif
 run: $(TARGET)
 	./$(TARGET)
 
+web: $(WEB_TARGET)
+
+run-web: $(WEB_TARGET)
+	./$(WEB_TARGET) $(PORT)
+
  
 
 # Convenience alias used in README
@@ -118,9 +131,9 @@ release: rebuild
 
 # Cleanup
 ifeq ($(OS),Windows_NT)
-clean: ; powershell -NoProfile -Command "Remove-Item -Recurse -Force '$(BUILD_DIR)' -ErrorAction SilentlyContinue; Remove-Item -Force '$(TARGET)' -ErrorAction SilentlyContinue; Remove-Item -Force '$(TARGET).exe' -ErrorAction SilentlyContinue; Remove-Item -Force '$(TEST_TARGET)' -ErrorAction SilentlyContinue"
+clean: ; powershell -NoProfile -Command "Remove-Item -Recurse -Force '$(BUILD_DIR)' -ErrorAction SilentlyContinue; Remove-Item -Force '$(TARGET)' -ErrorAction SilentlyContinue; Remove-Item -Force '$(TARGET).exe' -ErrorAction SilentlyContinue; Remove-Item -Force '$(WEB_TARGET)' -ErrorAction SilentlyContinue; Remove-Item -Force '$(WEB_TARGET).exe' -ErrorAction SilentlyContinue; Remove-Item -Force '$(TEST_TARGET)' -ErrorAction SilentlyContinue"
 else
-clean: ; rm -rf $(BUILD_DIR) ; rm -f $(TARGET) $(TARGET).exe $(TEST_TARGET)
+clean: ; rm -rf $(BUILD_DIR) ; rm -f $(TARGET) $(TARGET).exe $(WEB_TARGET) $(WEB_TARGET).exe $(TEST_TARGET)
 endif
 
 rebuild: clean all
