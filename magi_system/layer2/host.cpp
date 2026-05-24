@@ -444,11 +444,6 @@ namespace magi
             pending.push_back(fragment.toBytes());
         }
 
-        if (pending.size() > 1)
-        {
-            return true;
-        }
-
         sendArpRequest(iface.get(), nextHopIp);
         return true;
     }
