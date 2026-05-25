@@ -18,7 +18,9 @@ MAGI System adalah simulator jaringan edukasional yang mengimplementasikan lapis
 
 - Compiler C++ (g++ atau clang) dengan dukungan C++11
 - `make`
-- Shell/terminal pada Linux untuk menjalankan binari
+- Terminal/shell sesuai OS:
+  - macOS/Linux: shell bawaan terminal
+  - Windows: MinGW-w64/MSYS2 dengan `g++` dan `mingw32-make` tersedia di `PATH`
 
 Catatan: proyek tidak memerlukan dependensi eksternal khusus; cukup compiler standar dan Makefile.
 
@@ -71,16 +73,54 @@ Catatan: proyek tidak memerlukan dependensi eksternal khusus; cukup compiler sta
 
 ## Cara Build dan Run 
 
-Build dan jalankan dari direktori `magi_system` pada Linux.
+Perintah bisa dijalankan dari root repository.
+
+```bash
+make            # build CLI
+make run        # jalankan CLI interaktif
+make test       # jalankan unit/integration tests
+```
+
+Untuk menjalankan web dashboard:
+
+```bash
+make run-web
+```
+
+Dashboard akan tersedia di:
+
+```text
+http://127.0.0.1:8080/gui/index.html
+```
+
+Gunakan port lain jika port 8080 sedang dipakai:
+
+```bash
+make run-web PORT=9090
+```
+
+Pada Windows, gunakan `mingw32-make` jika command `make` tidak tersedia:
+
+```bat
+mingw32-make run
+mingw32-make run-web
+mingw32-make run-web PORT=9090
+```
+
+Makefile akan otomatis membuat executable `.exe` di Windows dan menautkan library Winsock yang dibutuhkan web server.
+
+Alternatif dari dalam direktori `magi_system`:
 
 ```bash
 cd magi_system
-make            # membangun executable
-./magi_system   # jalankan CLI interaktif
+make
+make run
+make run-web
 ```
 
 Catatan:
-- Jika Makefile menyediakan target `makerun`, Anda bisa menggunakan `make makerun` sebagai shortcut.
+- Tekan `Ctrl+C` untuk menghentikan web server.
+- Jika Makefile menyediakan target `makerun`, Anda bisa menggunakan `make makerun` sebagai shortcut CLI.
 - Untuk rebuild bersih: `make clean && make`.
 
 ## Struktur Proyek 
