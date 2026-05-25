@@ -2,6 +2,7 @@
 #define MAGI_WEB_SERVER_HPP
 
 #include "cli.hpp"
+#include <cstdint>
 #include <map>
 #include <string>
 
@@ -12,9 +13,11 @@ namespace magi
     {
     public:
         WebServer(CLI &cli, const std::string &documentRoot);
-        bool serve(uint16_t port);
+        bool serve(std::uint16_t port);
 
     private:
+        typedef std::uintptr_t SocketHandle;
+
         struct HttpRequest
         {
             std::string method;
@@ -26,8 +29,8 @@ namespace magi
         CLI &cli;
         std::string documentRoot;
 
-        void handleClient(int clientFd);
-        bool readRequest(int clientFd, HttpRequest &request);
+        void handleClient(SocketHandle clientFd);
+        bool readRequest(SocketHandle clientFd, HttpRequest &request);
         std::string buildResponse(const HttpRequest &request);
         std::string buildApiResponse(const HttpRequest &request);
         std::string buildStaticResponse(const HttpRequest &request);

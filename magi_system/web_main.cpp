@@ -1,18 +1,19 @@
 #include "cli.hpp"
 #include "web/server.hpp"
 
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
 
 int main(int argc, char **argv)
 {
-    uint16_t port = 8080;
+    std::uint16_t port = 8080;
     if (argc >= 2)
     {
         int parsed = std::atoi(argv[1]);
         if (parsed > 0 && parsed <= 65535)
         {
-            port = static_cast<uint16_t>(parsed);
+            port = static_cast<std::uint16_t>(parsed);
         }
     }
 
