@@ -10,16 +10,27 @@ LDFLAGS :=
 # Targets and directories
 TARGET_NAME := magi_system
 WEB_TARGET_NAME := magi_web
-BUILD_DIR := build
+BUILD_ROOT := build
 PORT ?= 8080
 
+# WSL uses Linux toolchains and POSIX paths, so keep the POSIX build path even
+# if OS=Windows_NT is passed manually while debugging from /mnt/c.
+IS_WINDOWS := 0
 ifeq ($(OS),Windows_NT)
+ifeq ($(WSL_INTEROP)$(WSL_DISTRO_NAME),)
+IS_WINDOWS := 1
+endif
+endif
+
+ifeq ($(IS_WINDOWS),1)
 EXE_EXT := .exe
 RUN_PREFIX :=
+BUILD_DIR := $(BUILD_ROOT)/windows
 LDFLAGS += -lws2_32
 else
 EXE_EXT :=
 RUN_PREFIX := ./
+BUILD_DIR := $(BUILD_ROOT)/posix
 endif
 
 TARGET := $(TARGET_NAME)$(EXE_EXT)
@@ -105,7 +116,7 @@ $(WEB_TARGET): $(WEB_OBJECTS)
 # Compile with auto-generated dependency files
 
 # Use platform-specific recipe so `make` works both on Windows (cmd) and POSIX shells
-ifeq ($(OS),Windows_NT)
+ifeq ($(IS_WINDOWS),1)
 $(BUILD_DIR)/%.o: %.cpp ; cmd /c if not exist "$(dir $@)" mkdir "$(dir $@)" && $(CXX) $(CPPFLAGS) $(CXXFLAGS) -MMD -MP -c $< -o $@
 
  
@@ -142,10 +153,10 @@ release: CXXFLAGS += -O2
 release: rebuild
 
 # Cleanup
-ifeq ($(OS),Windows_NT)
-clean: ; powershell -NoProfile -Command "Remove-Item -Recurse -Force '$(BUILD_DIR)' -ErrorAction SilentlyContinue; Remove-Item -Force '$(TARGET_NAME)' -ErrorAction SilentlyContinue; Remove-Item -Force '$(TARGET_NAME).exe' -ErrorAction SilentlyContinue; Remove-Item -Force '$(WEB_TARGET_NAME)' -ErrorAction SilentlyContinue; Remove-Item -Force '$(WEB_TARGET_NAME).exe' -ErrorAction SilentlyContinue; Remove-Item -Force '$(TEST_TARGET)' -ErrorAction SilentlyContinue"
+ifeq ($(IS_WINDOWS),1)
+clean: ; powershell -NoProfile -Command "Remove-Item -Recurse -Force '$(BUILD_ROOT)' -ErrorAction SilentlyContinue; Remove-Item -Force '$(TARGET_NAME)' -ErrorAction SilentlyContinue; Remove-Item -Force '$(TARGET_NAME).exe' -ErrorAction SilentlyContinue; Remove-Item -Force '$(WEB_TARGET_NAME)' -ErrorAction SilentlyContinue; Remove-Item -Force '$(WEB_TARGET_NAME).exe' -ErrorAction SilentlyContinue; Remove-Item -Force '$(TEST_TARGET)' -ErrorAction SilentlyContinue"
 else
-clean: ; rm -rf $(BUILD_DIR) ; rm -f $(TARGET_NAME) $(TARGET_NAME).exe $(WEB_TARGET_NAME) $(WEB_TARGET_NAME).exe $(TEST_TARGET)
+clean: ; rm -rf $(BUILD_ROOT) ; rm -f $(TARGET_NAME) $(TARGET_NAME).exe $(WEB_TARGET_NAME) $(WEB_TARGET_NAME).exe $(TEST_TARGET)
 endif
 
 rebuild: clean all
