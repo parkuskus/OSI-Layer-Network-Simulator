@@ -2,37 +2,187 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cctype>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <sstream>
 #include <vector>
 
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#endif
 
 namespace magi
 {
+    namespace
+    {
+#if defined(_WIN32)
+        typedef SOCKET NativeSocket;
+        typedef int SocketLength;
+        const NativeSocket InvalidSocket = INVALID_SOCKET;
+
+        bool initializeSockets()
+        {
+            WSADATA data;
+            int result = WSAStartup(MAKEWORD(2, 2), &data);
+            if (result != 0)
+            {
+                std::cerr << "[web] WSAStartup failed: WSA error " << result << std::endl;
+                return false;
+            }
+            return true;
+        }
+
+        void cleanupSockets()
+        {
+            WSACleanup();
+        }
+
+        void closeSocket(NativeSocket socket)
+        {
+            ::closesocket(socket);
+        }
+
+        int lastSocketError()
+        {
+            return WSAGetLastError();
+        }
+
+        bool socketInterrupted(int errorCode)
+        {
+            return errorCode == WSAEINTR;
+        }
+
+        std::string socketErrorMessage(int errorCode)
+        {
+            std::ostringstream message;
+            message << "WSA error " << errorCode;
+            return message.str();
+        }
+#else
+        typedef int NativeSocket;
+        typedef socklen_t SocketLength;
+        const NativeSocket InvalidSocket = -1;
+
+        bool initializeSockets()
+        {
+            return true;
+        }
+
+        void cleanupSockets()
+        {
+        }
+
+        void closeSocket(NativeSocket socket)
+        {
+            ::close(socket);
+        }
+
+        int lastSocketError()
+        {
+            return errno;
+        }
+
+        bool socketInterrupted(int errorCode)
+        {
+            return errorCode == EINTR;
+        }
+
+        std::string socketErrorMessage(int errorCode)
+        {
+            return std::strerror(errorCode);
+        }
+#endif
+
+        class SocketRuntime
+        {
+        public:
+            SocketRuntime() : ready(initializeSockets()) {}
+            ~SocketRuntime()
+            {
+                if (ready)
+                    cleanupSockets();
+            }
+
+            bool isReady() const
+            {
+                return ready;
+            }
+
+        private:
+            bool ready;
+        };
+
+        bool setReuseAddress(NativeSocket socket)
+        {
+            int opt = 1;
+#if defined(_WIN32)
+            return ::setsockopt(socket, SOL_SOCKET, SO_REUSEADDR,
+                                reinterpret_cast<const char *>(&opt), sizeof(opt)) == 0;
+#else
+            return ::setsockopt(socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) == 0;
+#endif
+        }
+
+        int receiveSocket(NativeSocket socket, char *buffer, size_t length)
+        {
+#if defined(_WIN32)
+            const size_t chunk = std::min(length, static_cast<size_t>(std::numeric_limits<int>::max()));
+            return ::recv(socket, buffer, static_cast<int>(chunk), 0);
+#else
+            ssize_t received = ::recv(socket, buffer, length, 0);
+            if (received > static_cast<ssize_t>(std::numeric_limits<int>::max()))
+                return std::numeric_limits<int>::max();
+            return static_cast<int>(received);
+#endif
+        }
+
+        int sendSocket(NativeSocket socket, const char *data, size_t length)
+        {
+            const size_t chunk = std::min(length, static_cast<size_t>(std::numeric_limits<int>::max()));
+#if defined(_WIN32)
+            return ::send(socket, data, static_cast<int>(chunk), 0);
+#else
+            ssize_t sent = ::send(socket, data, chunk, 0);
+            if (sent > static_cast<ssize_t>(std::numeric_limits<int>::max()))
+                return std::numeric_limits<int>::max();
+            return static_cast<int>(sent);
+#endif
+        }
+    }
 
     WebServer::WebServer(CLI &cliRef, const std::string &root)
         : cli(cliRef), documentRoot(root.empty() ? "." : root)
     {
     }
 
-    bool WebServer::serve(uint16_t port)
+    bool WebServer::serve(std::uint16_t port)
     {
-        int serverFd = ::socket(AF_INET, SOCK_STREAM, 0);
-        if (serverFd < 0)
+        SocketRuntime runtime;
+        if (!runtime.isReady())
+            return false;
+
+        NativeSocket serverFd = ::socket(AF_INET, SOCK_STREAM, 0);
+        if (serverFd == InvalidSocket)
         {
-            std::cerr << "[web] socket failed: " << std::strerror(errno) << std::endl;
+            int errorCode = lastSocketError();
+            std::cerr << "[web] socket failed: " << socketErrorMessage(errorCode) << std::endl;
             return false;
         }
 
-        int opt = 1;
-        ::setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+        setReuseAddress(serverFd);
 
         sockaddr_in address;
         std::memset(&address, 0, sizeof(address));
@@ -42,15 +192,17 @@ namespace magi
 
         if (::bind(serverFd, reinterpret_cast<sockaddr *>(&address), sizeof(address)) < 0)
         {
-            std::cerr << "[web] bind failed on port " << port << ": " << std::strerror(errno) << std::endl;
-            ::close(serverFd);
+            int errorCode = lastSocketError();
+            std::cerr << "[web] bind failed on port " << port << ": " << socketErrorMessage(errorCode) << std::endl;
+            closeSocket(serverFd);
             return false;
         }
 
         if (::listen(serverFd, 16) < 0)
         {
-            std::cerr << "[web] listen failed: " << std::strerror(errno) << std::endl;
-            ::close(serverFd);
+            int errorCode = lastSocketError();
+            std::cerr << "[web] listen failed: " << socketErrorMessage(errorCode) << std::endl;
+            closeSocket(serverFd);
             return false;
         }
 
@@ -60,25 +212,26 @@ namespace magi
         while (true)
         {
             sockaddr_in clientAddress;
-            socklen_t clientLength = sizeof(clientAddress);
-            int clientFd = ::accept(serverFd, reinterpret_cast<sockaddr *>(&clientAddress), &clientLength);
-            if (clientFd < 0)
+            SocketLength clientLength = sizeof(clientAddress);
+            NativeSocket clientFd = ::accept(serverFd, reinterpret_cast<sockaddr *>(&clientAddress), &clientLength);
+            if (clientFd == InvalidSocket)
             {
-                if (errno == EINTR)
+                int errorCode = lastSocketError();
+                if (socketInterrupted(errorCode))
                     continue;
-                std::cerr << "[web] accept failed: " << std::strerror(errno) << std::endl;
+                std::cerr << "[web] accept failed: " << socketErrorMessage(errorCode) << std::endl;
                 continue;
             }
 
-            handleClient(clientFd);
-            ::close(clientFd);
+            handleClient(static_cast<SocketHandle>(clientFd));
+            closeSocket(clientFd);
         }
 
-        ::close(serverFd);
+        closeSocket(serverFd);
         return true;
     }
 
-    void WebServer::handleClient(int clientFd)
+    void WebServer::handleClient(SocketHandle clientFd)
     {
         HttpRequest request;
         std::string response;
@@ -96,7 +249,7 @@ namespace magi
         size_t remaining = response.size();
         while (remaining > 0)
         {
-            ssize_t sent = ::send(clientFd, data, remaining, 0);
+            int sent = sendSocket(static_cast<NativeSocket>(clientFd), data, remaining);
             if (sent <= 0)
                 break;
             data += sent;
@@ -104,7 +257,7 @@ namespace magi
         }
     }
 
-    bool WebServer::readRequest(int clientFd, HttpRequest &request)
+    bool WebServer::readRequest(SocketHandle clientFd, HttpRequest &request)
     {
         std::string raw;
         char buffer[4096];
@@ -112,7 +265,7 @@ namespace magi
 
         while (headerEnd == std::string::npos)
         {
-            ssize_t received = ::recv(clientFd, buffer, sizeof(buffer), 0);
+            int received = receiveSocket(static_cast<NativeSocket>(clientFd), buffer, sizeof(buffer));
             if (received <= 0)
                 return false;
             raw.append(buffer, static_cast<size_t>(received));
@@ -162,7 +315,7 @@ namespace magi
         size_t bodyStart = headerEnd + 4;
         while (raw.size() - bodyStart < contentLength)
         {
-            ssize_t received = ::recv(clientFd, buffer, sizeof(buffer), 0);
+            int received = receiveSocket(static_cast<NativeSocket>(clientFd), buffer, sizeof(buffer));
             if (received <= 0)
                 return false;
             raw.append(buffer, static_cast<size_t>(received));

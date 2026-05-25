@@ -8,10 +8,22 @@ CXXFLAGS := $(STD) $(WARN)
 LDFLAGS :=
 
 # Targets and directories
-TARGET := magi_system
-WEB_TARGET := magi_web
+TARGET_NAME := magi_system
+WEB_TARGET_NAME := magi_web
 BUILD_DIR := build
 PORT ?= 8080
+
+ifeq ($(OS),Windows_NT)
+EXE_EXT := .exe
+RUN_PREFIX :=
+LDFLAGS += -lws2_32
+else
+EXE_EXT :=
+RUN_PREFIX := ./
+endif
+
+TARGET := $(TARGET_NAME)$(EXE_EXT)
+WEB_TARGET := $(WEB_TARGET_NAME)$(EXE_EXT)
 
 # Source files
 SOURCES := \
@@ -110,12 +122,12 @@ endif
 
 # Run helpers
 run: $(TARGET)
-	./$(TARGET)
+	$(RUN_PREFIX)$(TARGET)
 
 web: $(WEB_TARGET)
 
 run-web: $(WEB_TARGET)
-	./$(WEB_TARGET) $(PORT)
+	$(RUN_PREFIX)$(WEB_TARGET) $(PORT)
 
  
 
@@ -131,9 +143,9 @@ release: rebuild
 
 # Cleanup
 ifeq ($(OS),Windows_NT)
-clean: ; powershell -NoProfile -Command "Remove-Item -Recurse -Force '$(BUILD_DIR)' -ErrorAction SilentlyContinue; Remove-Item -Force '$(TARGET)' -ErrorAction SilentlyContinue; Remove-Item -Force '$(TARGET).exe' -ErrorAction SilentlyContinue; Remove-Item -Force '$(WEB_TARGET)' -ErrorAction SilentlyContinue; Remove-Item -Force '$(WEB_TARGET).exe' -ErrorAction SilentlyContinue; Remove-Item -Force '$(TEST_TARGET)' -ErrorAction SilentlyContinue"
+clean: ; powershell -NoProfile -Command "Remove-Item -Recurse -Force '$(BUILD_DIR)' -ErrorAction SilentlyContinue; Remove-Item -Force '$(TARGET_NAME)' -ErrorAction SilentlyContinue; Remove-Item -Force '$(TARGET_NAME).exe' -ErrorAction SilentlyContinue; Remove-Item -Force '$(WEB_TARGET_NAME)' -ErrorAction SilentlyContinue; Remove-Item -Force '$(WEB_TARGET_NAME).exe' -ErrorAction SilentlyContinue; Remove-Item -Force '$(TEST_TARGET)' -ErrorAction SilentlyContinue"
 else
-clean: ; rm -rf $(BUILD_DIR) ; rm -f $(TARGET) $(TARGET).exe $(WEB_TARGET) $(WEB_TARGET).exe $(TEST_TARGET)
+clean: ; rm -rf $(BUILD_DIR) ; rm -f $(TARGET_NAME) $(TARGET_NAME).exe $(WEB_TARGET_NAME) $(WEB_TARGET_NAME).exe $(TEST_TARGET)
 endif
 
 rebuild: clean all
@@ -146,7 +158,7 @@ test: $(TEST_TARGET)
 
 # Windows-friendly aliases
 run-win: $(TARGET)
-	$(TARGET).exe
+	$(TARGET)
 
 clean-win: clean
 

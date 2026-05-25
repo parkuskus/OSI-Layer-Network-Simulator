@@ -1,5 +1,7 @@
 .PHONY: all run web run-web test clean
 
+PORT ?= 8080
+
 all:
 	$(MAKE) -C magi_system
 
