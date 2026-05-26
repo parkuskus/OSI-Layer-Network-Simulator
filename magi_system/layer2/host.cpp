@@ -36,6 +36,7 @@ namespace
 
     std::map<std::string, ReassemblyBuffer> gReassemblyBuffers;
     const std::chrono::seconds kReassemblyBufferTtl(60);
+    std::vector<magi::Host *> gHostRegistry;
 
     void pruneExpiredReassemblyBuffers(const std::chrono::steady_clock::time_point &now)
     {
@@ -209,6 +210,20 @@ namespace magi
     {
         // Host biasanya memiliki 1 interface
         addInterface();
+        gHostRegistry.push_back(this);
+    }
+
+    Host::~Host()
+    {
+        stopHttpServer();
+        stopDhcpServer();
+        stopDnsServer();
+
+        std::vector<Host *>::iterator it = std::find(gHostRegistry.begin(), gHostRegistry.end(), this);
+        if (it != gHostRegistry.end())
+        {
+            gHostRegistry.erase(it);
+        }
     }
 
     void Host::handleReceive(Interface *incomingInterface, const std::vector<uint8_t> &rawBytes)
@@ -297,6 +312,14 @@ namespace magi
     uint32_t Host::makeEchoKey(uint16_t sequenceNumber) const
     {
         return (static_cast<uint32_t>(echoIdentifier) << 16) | static_cast<uint32_t>(sequenceNumber);
+    }
+
+    std::string Host::makeSocketKey(const std::string &localIp, uint16_t localPort,
+                                    const std::string &remoteIp, uint16_t remotePort) const
+    {
+        std::ostringstream oss;
+        oss << localIp << ":" << localPort << ":" << remoteIp << ":" << remotePort;
+        return oss.str();
     }
 
     std::string Host::resolveNextHop(const std::string &targetIp) const
@@ -474,17 +497,14 @@ namespace magi
                                     const std::string &remoteIp, uint16_t remotePort,
                                     std::shared_ptr<TCPSocket> socket)
     {
-        std::ostringstream oss;
-        oss << localIp << ":" << localPort << ":" << remoteIp << ":" << remotePort;
-        activeSockets[oss.str()] = socket;
+        activeSockets[makeSocketKey(localIp, localPort, remoteIp, remotePort)] = socket;
     }
 
     std::shared_ptr<TCPSocket> Host::findActiveSocket(const std::string &localIp, uint16_t localPort,
                                                       const std::string &remoteIp, uint16_t remotePort) const
     {
-        std::ostringstream oss;
-        oss << localIp << ":" << localPort << ":" << remoteIp << ":" << remotePort;
-        std::map<std::string, std::shared_ptr<TCPSocket>>::const_iterator it = activeSockets.find(oss.str());
+        std::map<std::string, std::shared_ptr<TCPSocket>>::const_iterator it =
+            activeSockets.find(makeSocketKey(localIp, localPort, remoteIp, remotePort));
         if (it != activeSockets.end())
         {
             return it->second;
@@ -492,17 +512,44 @@ namespace magi
         return nullptr;
     }
 
+    std::shared_ptr<TCPSocket> Host::acceptConnection(uint16_t port)
+    {
+        std::map<uint16_t, std::queue<AcceptedSocketEntry>>::iterator it = acceptedSockets.find(port);
+        if (it == acceptedSockets.end() || it->second.empty())
+        {
+            return nullptr;
+        }
+
+        AcceptedSocketEntry entry = it->second.front();
+        it->second.pop();
+        if (it->second.empty())
+        {
+            acceptedSockets.erase(it);
+        }
+        return entry.socket;
+    }
+
     void Host::unregisterListeningSocket(uint16_t port)
     {
         listeningSockets.erase(port);
+        std::map<uint16_t, std::queue<AcceptedSocketEntry>>::iterator it = acceptedSockets.find(port);
+        if (it != acceptedSockets.end())
+        {
+            while (!it->second.empty())
+            {
+                queuedAcceptedSocketKeys.erase(it->second.front().key);
+                it->second.pop();
+            }
+            acceptedSockets.erase(it);
+        }
     }
 
     void Host::unregisterActiveSocket(const std::string &localIp, uint16_t localPort,
                                       const std::string &remoteIp, uint16_t remotePort)
     {
-        std::ostringstream oss;
-        oss << localIp << ":" << localPort << ":" << remoteIp << ":" << remotePort;
-        activeSockets.erase(oss.str());
+        const std::string key = makeSocketKey(localIp, localPort, remoteIp, remotePort);
+        activeSockets.erase(key);
+        queuedAcceptedSocketKeys.erase(key);
     }
 
     bool Host::initiateCloseToRemote(const std::string &localIp,
@@ -865,9 +912,7 @@ namespace magi
 
             logEvent("packet", name, packet.srcIp, "TCP","TCP " + std::to_string(tcp.sourcePort) + "->" + std::to_string(tcp.destinationPort) +" flags=0x" + std::to_string(tcp.flags) + " seq=" + std::to_string(tcp.seqNum));
 
-            std::ostringstream keyoss;
-            keyoss << packet.dstIp << ":" << tcp.destinationPort << ":" << packet.srcIp << ":" << tcp.sourcePort;
-            std::string key = keyoss.str();
+            const std::string key = makeSocketKey(packet.dstIp, tcp.destinationPort, packet.srcIp, tcp.sourcePort);
             std::cout << "[Host] " << name << " TCP dispatch key=" << key << std::endl;
             auto ait = activeSockets.find(key);
             if (ait != activeSockets.end())
@@ -900,10 +945,26 @@ namespace magi
                     sendIpv4Packet(resp);
                 }
 
+                if (listeningSockets.find(tcp.destinationPort) != listeningSockets.end() &&
+                    sock->isConnected() &&
+                    queuedAcceptedSocketKeys.find(key) == queuedAcceptedSocketKeys.end())
+                {
+                    AcceptedSocketEntry entry;
+                    entry.key = key;
+                    entry.socket = sock;
+                    acceptedSockets[tcp.destinationPort].push(entry);
+                    queuedAcceptedSocketKeys.insert(key);
+                }
+
                 // HTTP Server Tick Hook: only when the segment actually carries request data
                 if (tcp.destinationPort == 80 && httpServer && httpServer->isRunning() && tcp.getPayloadSize() > 0)
                 {
                     httpServer->tick(packet.srcIp, tcp.sourcePort);
+                }
+
+                if (sock->isClosed())
+                {
+                    unregisterActiveSocket(packet.dstIp, tcp.destinationPort, packet.srcIp, tcp.sourcePort);
                 }
 
                 return;
@@ -912,10 +973,16 @@ namespace magi
             auto lit = listeningSockets.find(tcp.destinationPort);
             if (lit != listeningSockets.end())
             {
-                auto serverSock = lit->second;
-                // Update listening socket with remote IP for SYN-ACK response
-                serverSock->remoteIP = packet.srcIp;
-                serverSock->remotePort = tcp.sourcePort;
+                if (!tcp.hasSYN() || tcp.hasACK())
+                {
+                    return;
+                }
+
+                std::shared_ptr<TCPSocket> serverSock =
+                    std::make_shared<TCPSocket>(packet.dstIp, tcp.destinationPort, packet.srcIp, tcp.sourcePort);
+                serverSock->setState(TCPState::LISTEN);
+                registerActiveSocket(packet.dstIp, tcp.destinationPort, packet.srcIp, tcp.sourcePort, serverSock);
+
                 std::shared_ptr<TCPSegment> response = serverSock->handleIncomingSegment(tcp);
                 if (response)
                 {
@@ -941,8 +1008,6 @@ namespace magi
                     resp.updateChecksum();
                     sendIpv4Packet(resp);
                 }
-
-                registerActiveSocket(packet.dstIp, tcp.destinationPort, packet.srcIp, tcp.sourcePort, serverSock);
                 return;
             }
 
@@ -1088,6 +1153,11 @@ namespace magi
             dnsServer->stop();
             dnsServer.reset();
         }
+    }
+
+    std::vector<Host *> Host::getAllHosts()
+    {
+        return gHostRegistry;
     }
 
 }

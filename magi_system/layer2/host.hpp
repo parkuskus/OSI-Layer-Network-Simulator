@@ -5,6 +5,8 @@
 #include <string>
 #include <map>
 #include <memory>
+#include <queue>
+#include <set>
 #include <vector>
 #include <chrono>
 #include "core/node.hpp"
@@ -30,6 +32,12 @@ namespace magi
     class Host : public Node
     {
     private:
+        struct AcceptedSocketEntry
+        {
+            std::string key;
+            std::shared_ptr<TCPSocket> socket;
+        };
+
         struct EchoProbeState
         {
             std::chrono::steady_clock::time_point sentAt;
@@ -54,10 +62,14 @@ namespace magi
         // Simple socket maps for in-simulator TCP delivery
         std::map<uint16_t, std::shared_ptr<TCPSocket>> listeningSockets;
         std::map<std::string, std::shared_ptr<TCPSocket>> activeSockets;
+        std::map<uint16_t, std::queue<AcceptedSocketEntry>> acceptedSockets;
+        std::set<std::string> queuedAcceptedSocketKeys;
         std::map<uint16_t, std::shared_ptr<UDPSocket>> udpSockets;
 
         std::string getPrimaryIp() const;
         uint32_t makeEchoKey(uint16_t sequenceNumber) const;
+        std::string makeSocketKey(const std::string &localIp, uint16_t localPort,
+                                  const std::string &remoteIp, uint16_t remotePort) const;
         std::string resolveNextHop(const std::string &targetIp) const;
         void sendArpRequest(Interface *iface, const std::string &targetIp);
         void flushQueuedPackets(Interface *iface, const std::string &nextHopIp, int vlanId);
@@ -77,6 +89,7 @@ namespace magi
 
     public:
         Host(const std::string &name, const std::string &ipAddress = "", const std::string &defaultGateway = "");
+        ~Host() override;
 
         // Getters dan Setters
         std::string getIpAddress() const { return ipAddress; }
@@ -104,6 +117,7 @@ namespace magi
                                   std::shared_ptr<TCPSocket> socket);
         std::shared_ptr<TCPSocket> findActiveSocket(const std::string &localIp, uint16_t localPort,
                                                     const std::string &remoteIp, uint16_t remotePort) const;
+        std::shared_ptr<TCPSocket> acceptConnection(uint16_t port);
         void unregisterListeningSocket(uint16_t port);
         void unregisterActiveSocket(const std::string &localIp, uint16_t localPort,
                                     const std::string &remoteIp, uint16_t remotePort);
@@ -127,6 +141,8 @@ namespace magi
         void startDnsServer();
         void stopDnsServer();
         std::shared_ptr<DNSServer> getDnsServer() const { return dnsServer; }
+
+        static std::vector<Host *> getAllHosts();
 
     private:
         std::shared_ptr<HTTPServer> httpServer;
