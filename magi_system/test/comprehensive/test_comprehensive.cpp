@@ -40,46 +40,31 @@ namespace
         return std::vector<uint8_t>(text.begin(), text.end());
     }
 
-    // =========================================================================
-    // CLI / Topology Edge Cases
-    // =========================================================================
-
     bool testCLICreateEdgeCases(magi_test::TestStats &stats)
     {
         magi_test::printSection("Comprehensive - CLI create edge cases");
 
         magi::CLI cli;
 
-        // Duplicate node name
         std::string out1 = cli.executeLine("create host H1", false);
         std::string out2 = cli.executeLine("create host H1", false);
-        magi_test::expect(stats,
-                          magi_test::contains(out2, "sudah ada"),
-                          "CLI rejects duplicate node name");
+        magi_test::expect(stats,magi_test::contains(out2, "sudah ada"),"CLI rejects duplicate node name");
 
         // Invalid node type
         std::string out3 = cli.executeLine("create firewall FW1", false);
-        magi_test::expect(stats,
-                          magi_test::contains(out3, "Format create tidak valid"),
-                          "CLI rejects invalid node type");
+        magi_test::expect(stats,magi_test::contains(out3, "Format create tidak valid"),"CLI rejects invalid node type");
 
         // Host with extra ports
         std::string out4 = cli.executeLine("create host H2 4", false);
-        magi_test::expect(stats,
-                          magi_test::contains(out4, "Host hanya dapat memiliki 1 interface"),
-                          "CLI rejects host with extra ports");
+        magi_test::expect(stats,magi_test::contains(out4, "Host hanya dapat memiliki 1 interface"),"CLI rejects host with extra ports");
 
         // Switch with 0 ports
         std::string out5 = cli.executeLine("create switch SW0 0", false);
-        magi_test::expect(stats,
-                          magi_test::contains(out5, "harus lebih dari 0"),
-                          "CLI rejects switch with 0 ports");
+        magi_test::expect(stats,magi_test::contains(out5, "harus lebih dari 0"),"CLI rejects switch with 0 ports");
 
         // Router with 0 ports
         std::string out6 = cli.executeLine("create router R0 0", false);
-        magi_test::expect(stats,
-                          magi_test::contains(out6, "harus lebih dari 0"),
-                          "CLI rejects router with 0 ports");
+        magi_test::expect(stats,magi_test::contains(out6, "harus lebih dari 0"),"CLI rejects router with 0 ports");
 
         return stats.failed == 0;
     }
@@ -95,42 +80,28 @@ namespace
 
         // Link non-existent node
         std::string out1 = cli.executeLine("link H1 SW99:1", false);
-        magi_test::expect(stats,
-                          magi_test::contains(out1, "tidak ditemukan"),
-                          "CLI rejects link to non-existent node");
+        magi_test::expect(stats,magi_test::contains(out1, "tidak ditemukan"),"CLI rejects link to non-existent node");
 
         // Link invalid port
         std::string out2 = cli.executeLine("link H1 SW1:99", false);
-        magi_test::expect(stats,
-                          magi_test::contains(out2, "tidak ditemukan"),
-                          "CLI rejects link to invalid port");
+        magi_test::expect(stats,magi_test::contains(out2, "tidak ditemukan"),"CLI rejects link to invalid port");
 
         // Valid link
         std::string out3 = cli.executeLine("link H1 SW1:1", false);
-        magi_test::expect(stats,
-                          magi_test::contains(out3, "Berhasil menghubungkan"),
-                          "CLI accepts valid link");
+        magi_test::expect(stats,magi_test::contains(out3, "Berhasil menghubungkan"),"CLI accepts valid link");
 
         std::string out4 = cli.executeLine("link H2 SW1:1", false);
-        magi_test::expect(stats,
-                          magi_test::contains(out4, "sudah terhubung"),
-                          "CLI rejects link to already connected port");
+        magi_test::expect(stats,magi_test::contains(out4, "sudah terhubung"),"CLI rejects link to already connected port");
 
         std::string out5 = cli.executeLine("unlink H1 SW1:2", false);
-        magi_test::expect(stats,
-                          magi_test::contains(out5, "tidak ditemukan"),
-                          "CLI rejects unlink for non-existent connection");
+        magi_test::expect(stats,magi_test::contains(out5, "tidak ditemukan"),"CLI rejects unlink for non-existent connection");
 
         std::string out6 = cli.executeLine("link H1:0 H2", false);
-        magi_test::expect(stats,
-                          magi_test::contains(out6, "Format endpoint tidak valid"),
-                          "CLI rejects invalid endpoint format (port 0)");
+        magi_test::expect(stats,magi_test::contains(out6, "Format endpoint tidak valid"),"CLI rejects invalid endpoint format (port 0)");
 
-        // MTU too small
+
         std::string out7 = cli.executeLine("link H1 SW1:2 0 10", false);
-        magi_test::expect(stats,
-                          magi_test::contains(out7, "mtu terlalu kecil"),
-                          "CLI rejects MTU below minimum");
+        magi_test::expect(stats,magi_test::contains(out7, "mtu terlalu kecil"),"CLI rejects MTU below minimum");
 
         return stats.failed == 0;
     }
@@ -142,36 +113,26 @@ namespace
         magi::CLI cli;
         cli.executeLine("create host H1", false);
 
-        // Invalid IP
+        
         std::string out1 = cli.executeLine("setip H1 999.999.999.999/24", false);
-        magi_test::expect(stats,
-                          magi_test::contains(out1, "tidak valid"),
-                          "CLI rejects invalid IP address");
+        magi_test::expect(stats,magi_test::contains(out1, "tidak valid"),"CLI rejects invalid IP address");
 
         // Valid IP
         std::string out2 = cli.executeLine("setip H1 192.168.1.10/24", false);
-        magi_test::expect(stats,
-                          magi_test::contains(out2, "di-set ke"),
-                          "CLI accepts valid IP address");
+        magi_test::expect(stats,magi_test::contains(out2, "di-set ke"),"CLI accepts valid IP address");
 
         // Invalid gateway (setgw does not validate IP format)
         std::string out3 = cli.executeLine("setgw H1 not_an_ip", false);
-        magi_test::expect(stats,
-                          magi_test::contains(out3, "di-set ke"),
-                          "CLI accepts any gateway string (no validation)");
+        magi_test::expect(stats,magi_test::contains(out3, "di-set ke"),"CLI accepts any gateway string (no validation)");
 
         // Valid gateway
         std::string out4 = cli.executeLine("setgw H1 192.168.1.1", false);
-        magi_test::expect(stats,
-                          magi_test::contains(out4, "di-set ke"),
-                          "CLI accepts valid gateway");
+        magi_test::expect(stats,magi_test::contains(out4, "di-set ke"),"CLI accepts valid gateway");
 
         // Set IP on non-host (switch)
         cli.executeLine("create switch SW1 2", false);
         std::string out5 = cli.executeLine("setip SW1 192.168.1.2/24", false);
-        magi_test::expect(stats,
-                          magi_test::contains(out5, "Gunakan format router"),
-                          "CLI rejects setip on switch");
+        magi_test::expect(stats,magi_test::contains(out5, "Gunakan format router"),"CLI rejects setip on switch");
 
         return stats.failed == 0;
     }
@@ -188,38 +149,24 @@ namespace
         cli.executeLine("setgw H1 10.0.0.1", false);
 
         std::string topoOut = cli.executeLine("topology", false);
-        magi_test::expect(stats,
-                          magi_test::contains(topoOut, "H1 (host)"),
-                          "topology shows host node");
-        magi_test::expect(stats,
-                          magi_test::contains(topoOut, "SW1 (switch)"),
-                          "topology shows switch node");
-        magi_test::expect(stats,
-                          magi_test::contains(topoOut, "H1:1 <-> SW1:1"),
-                          "topology shows link");
+        magi_test::expect(stats,magi_test::contains(topoOut, "H1 (host)"),"topology shows host node");
+        magi_test::expect(stats,magi_test::contains(topoOut, "SW1 (switch)"),"topology shows switch node");
+        magi_test::expect(stats,magi_test::contains(topoOut, "H1:1 <-> SW1:1"),"topology shows link");
 
         std::string showOut = cli.executeLine("show H1", false);
-        magi_test::expect(stats,
-                          magi_test::contains(showOut, "10.0.0.2/24"),
-                          "show displays host IP");
+        magi_test::expect(stats,magi_test::contains(showOut, "10.0.0.2/24"),"show displays host IP");
 
         // Save topology
         std::string saveOut = cli.executeLine("save __test_topology.json", false);
-        magi_test::expect(stats,
-                          magi_test::contains(saveOut, "berhasil disimpan"),
-                          "save succeeds");
+        magi_test::expect(stats,magi_test::contains(saveOut, "berhasil disimpan"),"save succeeds");
 
         // Load topology into fresh CLI
         magi::CLI cli2;
         std::string loadOut = cli2.executeLine("load __test_topology.json", false);
-        magi_test::expect(stats,
-                          magi_test::contains(loadOut, "berhasil dimuat"),
-                          "load succeeds");
+        magi_test::expect(stats,magi_test::contains(loadOut, "berhasil dimuat"),"load succeeds");
 
         std::string topoAfterLoad = cli2.executeLine("topology", false);
-        magi_test::expect(stats,
-                          magi_test::contains(topoAfterLoad, "H1 (host)"),
-                          "loaded topology contains host");
+        magi_test::expect(stats,magi_test::contains(topoAfterLoad, "H1 (host)"),"loaded topology contains host");
 
         // Cleanup test file
         std::remove("__test_topology.json");
@@ -227,9 +174,7 @@ namespace
         return stats.failed == 0;
     }
 
-    // =========================================================================
-    // Switch Edge Cases
-    // =========================================================================
+
 
     bool testSwitchMacLearningAndForwarding(magi_test::TestStats &stats)
     {
@@ -256,20 +201,13 @@ namespace
         frame.vlanId = magi::iputil::kUntaggedVlan;
         frame.payload = {1, 2, 3};
 
-        // Capture via raw handleReceive on receiver/bystander isn't straightforward,
-        // so we test via the sender interface send and inspect MAC table.
+
         sender->getInterface(1)->send(frame.toBytes());
 
-        // After first unicast, MAC table should learn sender and forward to receiver only.
-        // Since we cannot easily intercept what bystander received without a custom Node,
-        // we verify MAC table learning via printMacTable output.
         const std::string macTable = magi_test::captureStdout([&]()
                                                               { sw.printMacTable(); });
-        magi_test::expect(stats,
-                          magi_test::contains(macTable, "00:00:00:00:00:11"),
-                          "Switch learns sender MAC");
+        magi_test::expect(stats,magi_test::contains(macTable, "00:00:00:00:00:11"),"Switch learns sender MAC");
 
-        // Now send from receiver to sender - should use learned MAC
         magi::EthernetFrame frame2;
         frame2.dstMac = "00:00:00:00:00:11";
         frame2.srcMac = "00:00:00:00:00:22";
@@ -280,9 +218,7 @@ namespace
 
         const std::string macTable2 = magi_test::captureStdout([&]()
                                                                { sw.printMacTable(); });
-        magi_test::expect(stats,
-                          magi_test::contains(macTable2, "00:00:00:00:00:22"),
-                          "Switch learns receiver MAC");
+        magi_test::expect(stats,magi_test::contains(macTable2, "00:00:00:00:00:22"),"Switch learns receiver MAC");
 
         return stats.failed == 0;
     }
@@ -314,19 +250,12 @@ namespace
 
         hostA->getInterface(1)->send(frame.toBytes());
 
-        // Verify MAC table learned with VLAN 10
         const std::string macTable = magi_test::captureStdout([&]()
                                                               { sw.printMacTable(); });
-        magi_test::expect(stats,
-                          magi_test::contains(macTable, "10:00:00:00:00:00:AA"),
-                          "Trunk port learns tagged MAC with VLAN 10");
+        magi_test::expect(stats,magi_test::contains(macTable, "10:00:00:00:00:00:AA"),"Trunk port learns tagged MAC with VLAN 10");
 
         return stats.failed == 0;
     }
-
-    // =========================================================================
-    // Router Edge Cases
-    // =========================================================================
 
     bool testRouterLongestPrefixMatch(magi_test::TestStats &stats)
     {
@@ -341,15 +270,10 @@ namespace
         router.addRoute("10.0.0.0/16", "10.0.1.2", 2, magi::iputil::kUntaggedVlan);
         router.addRoute("10.0.0.0/24", "10.0.0.254", 1, magi::iputil::kUntaggedVlan);
 
-        const std::string table = magi_test::captureStdout([&]()
-                                                           { router.printRoutingTable(); });
+        const std::string table = magi_test::captureStdout([&](){ router.printRoutingTable(); });
 
-        magi_test::expect(stats,
-                          magi_test::contains(table, "10.0.0.0/24"),
-                          "Routing table contains /24 route");
-        magi_test::expect(stats,
-                          magi_test::contains(table, "10.0.0.0/16"),
-                          "Routing table contains /16 route");
+        magi_test::expect(stats,magi_test::contains(table, "10.0.0.0/24"),"Routing table contains /24 route");
+        magi_test::expect(stats,magi_test::contains(table, "10.0.0.0/16"),"Routing table contains /16 route");
 
         return stats.failed == 0;
     }
@@ -400,12 +324,8 @@ namespace
         const std::string traceOut = magi_test::captureStdout([&]()
                                                               { hostA.traceroute("10.0.1.2", 2); });
 
-        magi_test::expect(stats,
-                          magi_test::contains(traceOut, "10.0.0.1"),
-                          "Traceroute shows router hop (TTL=1)");
-        magi_test::expect(stats,
-                          magi_test::contains(traceOut, "10.0.1.2"),
-                          "Traceroute reaches destination");
+        magi_test::expect(stats,magi_test::contains(traceOut, "10.0.0.1"),"Traceroute shows router hop (TTL=1)");
+        magi_test::expect(stats,magi_test::contains(traceOut, "10.0.1.2"),"Traceroute reaches destination");
 
         return stats.failed == 0;
     }
@@ -420,9 +340,7 @@ namespace
         // RIP initially disabled
         const std::string ripDisabled = magi_test::captureStdout([&]()
                                                                  { router.printRipRoutes(); });
-        magi_test::expect(stats,
-                          magi_test::contains(ripDisabled, "tidak aktif"),
-                          "RIP shows inactive before enable");
+        magi_test::expect(stats,magi_test::contains(ripDisabled, "tidak aktif"),"RIP shows inactive before enable");
 
         router.enableRip();
         magi_test::expect(stats, router.isRipEnabled(), "RIP enabled after enableRip");
@@ -461,29 +379,19 @@ namespace
         acl.addRule(denySsh);
 
         // Default deny (implicit) for anything not matched
-        magi_test::expect(stats,
-                          acl.checkPacket("192.168.1.1", "192.168.1.2", magi::ACLProtocol::ICMP, 0, 0),
-                          "ACL permits ICMP from any to any");
+        magi_test::expect(stats,acl.checkPacket("192.168.1.1", "192.168.1.2", magi::ACLProtocol::ICMP, 0, 0),"ACL permits ICMP from any to any");
 
-        magi_test::expect(stats,
-                          !acl.checkPacket("192.168.1.1", "192.168.1.2", magi::ACLProtocol::TCP, 12345, 22),
-                          "ACL denies TCP to port 22");
+        magi_test::expect(stats,!acl.checkPacket("192.168.1.1", "192.168.1.2", magi::ACLProtocol::TCP, 12345, 22),"ACL denies TCP to port 22");
 
-        magi_test::expect(stats,
-                          acl.checkPacket("192.168.1.1", "192.168.1.2", magi::ACLProtocol::TCP, 12345, 80),
-                          "ACL permits TCP to non-22 port (no rule matches -> default permit)");
+        magi_test::expect(stats,acl.checkPacket("192.168.1.1", "192.168.1.2", magi::ACLProtocol::TCP, 12345, 80),"ACL permits TCP to non-22 port (no rule matches -> default permit)");
 
         // Test with invalid rule removal
-        magi_test::expect(stats,
-                          !acl.removeRule(999),
-                          "ACL removeRule returns false for non-existent rule ID");
+        magi_test::expect(stats,!acl.removeRule(999),"ACL removeRule returns false for non-existent rule ID");
 
         return stats.failed == 0;
     }
 
-    // =========================================================================
-    // NAT Edge Cases
-    // =========================================================================
+
 
     bool testNATEdgeCases(magi_test::TestStats &stats)
     {
@@ -509,9 +417,6 @@ namespace
         return stats.failed == 0;
     }
 
-    // =========================================================================
-    // Host Edge Cases
-    // =========================================================================
 
     bool testHostPingEdgeCases(magi_test::TestStats &stats)
     {
@@ -525,25 +430,18 @@ namespace
         magi::Link::create(hostA.getInterface(1), hostB.getInterface(1));
 
         // Ping without IP configured - verify host has no primary IP
-        magi_test::expect(stats,
-                          hostA.getIpAddress().empty(),
-                          "Host without IP has empty IP address");
+        magi_test::expect(stats,hostA.getIpAddress().empty(),"Host without IP has empty IP address");
 
         // Ping invalid IP
         magi::Host hostC("H3", "10.0.0.3/24", "10.0.0.1");
-        const std::string badIpOut = magi_test::captureStdout([&]()
-                                                              { hostC.sendPing("not_an_ip"); });
-        magi_test::expect(stats,
-                          magi_test::contains(badIpOut, "Target IP tidak valid"),
-                          "Ping fails with invalid target IP");
+        const std::string badIpOut = magi_test::captureStdout([&](){ hostC.sendPing("not_an_ip"); });
+        magi_test::expect(stats,magi_test::contains(badIpOut, "Target IP tidak valid"),"Ping fails with invalid target IP");
 
         // Ping different subnet without gateway
         magi::Host hostD("H4", "192.168.1.2/24", "");
         const std::string noGwOut = magi_test::captureStdout([&]()
                                                              { hostD.sendPing("10.0.0.2"); });
-        magi_test::expect(stats,
-                          magi_test::contains(noGwOut, "default gateway belum di-set"),
-                          "Ping fails when no gateway for different subnet");
+        magi_test::expect(stats,magi_test::contains(noGwOut, "default gateway belum di-set"),"Ping fails when no gateway for different subnet");
 
         return stats.failed == 0;
     }
@@ -568,16 +466,12 @@ namespace
 
         const std::string arpOut = magi_test::captureStdout([&]()
                                                             { hostA.printArpCache(); });
-        magi_test::expect(stats,
-                          magi_test::contains(arpOut, "10.0.0.2"),
-                          "ARP cache contains target IP after ping");
+        magi_test::expect(stats,magi_test::contains(arpOut, "10.0.0.2"),"ARP cache contains target IP after ping");
 
         return stats.failed == 0;
     }
 
-    // =========================================================================
-    // TCP/UDP Edge Cases
-    // =========================================================================
+  
 
     bool testTCPInvalidInputs(magi_test::TestStats &stats)
     {
@@ -596,9 +490,7 @@ namespace
         magi_test::expect(stats, !bytes.empty(), "TCP segment serializes despite invalid ports");
 
         // Checksum should still compute
-        magi_test::expect(stats,
-                          seg.validateChecksum("10.0.0.1", "10.0.0.2"),
-                          "TCP checksum validates despite invalid ports");
+        magi_test::expect(stats,seg.validateChecksum("10.0.0.1", "10.0.0.2"),"TCP checksum validates despite invalid ports");
 
         // State machine: connection to self should be possible in simulator
         magi::TCPSocket client("10.0.0.1", 50000, "10.0.0.1", 50001);
@@ -622,16 +514,11 @@ namespace
         const std::vector<uint8_t> bytes = udp.toBytes();
         magi_test::expect(stats, !bytes.empty(), "UDP segment serializes with empty payload");
 
-        magi_test::expect(stats,
-                          udp.validateChecksum("10.0.0.1", "10.0.0.2"),
-                          "UDP checksum validates with empty payload");
+        magi_test::expect(stats,udp.validateChecksum("10.0.0.1", "10.0.0.2"),"UDP checksum validates with empty payload");
 
         return stats.failed == 0;
     }
 
-    // =========================================================================
-    // L7 Edge Cases
-    // =========================================================================
 
     bool testDHCPNoServer(magi_test::TestStats &stats)
     {
@@ -640,18 +527,13 @@ namespace
         magi::Host clientHost("H1", "0.0.0.0/0", "0.0.0.0");
         clientHost.getInterface(1)->setMacAddress("00:00:00:00:00:01");
 
-        const std::string dhcpOut = magi_test::captureStdout([&]()
-                                                             {
-                                                                 std::string ip = magi::DHCPClient::discover(&clientHost, 500, 1);
-                                                                 if (ip.empty())
-                                                                 {
-                                                                     std::cout << "[DHCP] Discovery failed as expected" << std::endl;
-                                                                 }
-                                                             });
+        const std::string dhcpOut = magi_test::captureStdout([&](){
+            std::string ip = magi::DHCPClient::discover(&clientHost, 500, 1);
+            if (ip.empty()){
+                std::cout << "[DHCP] Discovery failed as expected" << std::endl;
+            }});
 
-        magi_test::expect(stats,
-                          magi_test::contains(dhcpOut, "failed"),
-                          "DHCP discovery fails when no server is present");
+        magi_test::expect(stats,magi_test::contains(dhcpOut, "failed"),"DHCP discovery fails when no server is present");
 
         return stats.failed == 0;
     }
@@ -673,9 +555,7 @@ namespace
 
         // Query a name that does not exist in topology
         std::string resolved = magi::DNSClient::resolve(clientPtr, "nonexistent.host", allHosts);
-        magi_test::expect(stats,
-                          resolved.empty(),
-                          "DNS resolution returns empty for non-existent host");
+        magi_test::expect(stats,resolved.empty(),"DNS resolution returns empty for non-existent host");
 
         server.stopDnsServer();
 
@@ -700,18 +580,14 @@ namespace
         const std::string httpOut = magi_test::captureStdout([&]()
                                                              { magi::HTTPClient::get(client, "www.HS.com", allHosts); });
 
-        magi_test::expect(stats,
-                          !magi_test::contains(httpOut, "HTTP/1.1 200"),
-                          "HTTP GET does not return 200 when server is not running");
+        magi_test::expect(stats,!magi_test::contains(httpOut, "HTTP/1.1 200"),"HTTP GET does not return 200 when server is not running");
 
         server->stopDnsServer();
 
         return stats.failed == 0;
     }
 
-    // =========================================================================
-    // IP Utils Edge Cases
-    // =========================================================================
+    
 
     bool testIPUtilsEdgeCases(magi_test::TestStats &stats)
     {
@@ -752,9 +628,7 @@ namespace
         return stats.failed == 0;
     }
 
-    // =========================================================================
-    // Packet Serialization Edge Cases
-    // =========================================================================
+    
 
     bool testPacketSerializationEdgeCases(magi_test::TestStats &stats)
     {
