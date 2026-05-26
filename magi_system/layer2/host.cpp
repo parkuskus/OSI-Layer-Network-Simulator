@@ -1,6 +1,7 @@
 #include "host.hpp"
 #include "core/interface.hpp"
 #include "core/link.hpp"
+#include "core/event_log.hpp"
 #include "layer2/ethernet.hpp"
 #include "layer7/http_server.hpp"
 #include "layer7/dhcp_server.hpp"
@@ -404,6 +405,7 @@ namespace magi
                 frame.vlanId = iputil::kUntaggedVlan;
                 frame.payload = fragment.toBytes();
                 std::cout << "[Host] " << name << " sending IPv4 broadcast " << fragment.srcIp << "->" << fragment.dstIp << " via MAC " << frame.srcMac << std::endl;
+                logEvent("packet", name, fragment.dstIp, "IPv4", "Broadcast " + fragment.srcIp + "->" + fragment.dstIp + " proto=" + std::to_string(fragment.protocol));
                 iface->send(frame.toBytes());
             }
             return true;
@@ -433,6 +435,8 @@ namespace magi
                 frame.vlanId = iputil::kUntaggedVlan;
                 frame.payload = fragment.toBytes();
                 std::cout << "[Host] " << name << " sending IPv4 unicast " << fragment.srcIp << "->" << fragment.dstIp << " dstMac=" << frame.dstMac << std::endl;
+                logEvent("packet", name, fragment.dstIp, "IPv4",
+                         "Send " + fragment.srcIp + "->" + fragment.dstIp + " proto=" + std::to_string(fragment.protocol));
                 iface->send(frame.toBytes());
             }
             return true;
@@ -620,9 +624,7 @@ namespace magi
         it->second.rttMs = std::chrono::duration<double, std::milli>(now - it->second.sentAt).count();
     }
 
-    bool Host::extractEmbeddedEchoKey(const ICMPMessage &icmp,
-                                      uint16_t &identifier,
-                                      uint16_t &sequenceNumber) const
+    bool Host::extractEmbeddedEchoKey(const ICMPMessage &icmp, uint16_t &identifier,uint16_t &sequenceNumber) const
     {
         try
         {
@@ -661,6 +663,7 @@ namespace magi
 
         if (arp.opcode == 1 && arp.targetIp == getPrimaryIp())
         {
+            logEvent("packet", name, arp.senderIp, "ARP", "ARP request from " + arp.senderIp + " for " + arp.targetIp);
             EthernetFrame out;
             ARPMessage reply;
             reply.opcode = 2;
@@ -675,6 +678,7 @@ namespace magi
             out.vlanId = frame.vlanId;
             out.payload = reply.toBytes();
             incomingInterface->send(out.toBytes());
+            logEvent("packet", name, arp.senderIp, "ARP", "ARP reply sent to " + arp.senderIp);
             return;
         }
 
@@ -697,10 +701,13 @@ namespace magi
         }
 
         std::cout << "[Host] " << name << " received IPv4 frame: " << packet.srcIp << " -> " << packet.dstIp << ", ether src=" << frame.srcMac << " dst=" << frame.dstMac << std::endl;
+        logEvent("packet", name, packet.srcIp, "IPv4",
+                 "Received IPv4 from " + packet.srcIp + " to " + packet.dstIp + " proto=" + std::to_string(packet.protocol));
 
         if (!packet.validateChecksum())
         {
             std::cout << "[Host] " << name << " dropping IPv4 packet due to invalid checksum: " << packet.srcIp << "->" << packet.dstIp << std::endl;
+            logEvent("error", name, packet.srcIp, "IPv4", "Invalid checksum dropped");
             return;
         }
 
@@ -766,12 +773,14 @@ namespace magi
                 response.identification = nextIpIdentification++;
                 response.payload = reply.toBytes();
                 response.updateChecksum();
+                logEvent("packet", name, packet.srcIp, "ICMP", "Echo reply to " + packet.srcIp);
                 sendIpv4Packet(response);
                 return;
             }
 
             if (icmp.type == kICMPEchoReply)
             {
+                logEvent("packet", name, packet.srcIp, "ICMP", "Echo reply from " + packet.srcIp);
                 completeEchoProbe(icmp.identifier,
                                   icmp.sequenceNumber,
                                   packet.srcIp,
@@ -817,6 +826,10 @@ namespace magi
                 return;
             }
 
+            logEvent("packet", name, packet.srcIp, "UDP",
+                     "UDP " + std::to_string(udp.sourcePort) + "->" + std::to_string(udp.destinationPort) +
+                         " len=" + std::to_string(udp.payload.size()));
+
             // Deliver to registered UDP socket if any
             auto uit = udpSockets.find(udp.destinationPort);
             if (uit != udpSockets.end())
@@ -846,9 +859,11 @@ namespace magi
 
             if (!tcp.validateChecksum(packet.srcIp, packet.dstIp))
             {
-                std::cout << "[Host] " << name << " dropping TCP segment due to invalid checksum: " << packet.srcIp << "->" << packet.dstIp << std::endl;
+                logEvent("error", name, packet.srcIp, "TCP", "Invalid TCP checksum dropped");
                 return;
             }
+
+            logEvent("packet", name, packet.srcIp, "TCP","TCP " + std::to_string(tcp.sourcePort) + "->" + std::to_string(tcp.destinationPort) +" flags=0x" + std::to_string(tcp.flags) + " seq=" + std::to_string(tcp.seqNum));
 
             std::ostringstream keyoss;
             keyoss << packet.dstIp << ":" << tcp.destinationPort << ":" << packet.srcIp << ":" << tcp.sourcePort;

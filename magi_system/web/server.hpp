@@ -22,6 +22,7 @@ namespace magi
         {
             std::string method;
             std::string path;
+            std::string query;
             std::string body;
             std::map<std::string, std::string> headers;
         };
@@ -39,6 +40,7 @@ namespace magi
         std::string contentTypeFor(const std::string &path) const;
         std::string sanitizePath(const std::string &requestPath) const;
         std::string extractJsonString(const std::string &json, const std::string &key) const;
+        std::string extractQueryParam(const std::string &query, const std::string &key) const;
         std::string jsonEscape(const std::string &value) const;
         bool commandLooksSuccessful(const std::string &output) const;
         std::string httpResponse(int statusCode,

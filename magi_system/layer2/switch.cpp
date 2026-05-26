@@ -1,5 +1,6 @@
 #include "switch.hpp"
 #include "core/interface.hpp"
+#include "core/event_log.hpp"
 #include "layer2/ethernet.hpp"
 #include <iostream>
 #include <sstream>
@@ -52,6 +53,8 @@ void Switch::handleReceive(Interface* incomingInterface, const std::vector<uint8
     }
 
     macTable[makeMacKey(ingressVlan, frame.srcMac)] = ingressPort;
+    std::string protoStr = (frame.etherType == 0x0800) ? "IPv4" : ((frame.etherType == 0x0806) ? "ARP" : "OTHER");
+    logEvent("packet", name, frame.srcMac, "L2","Frame src=" + frame.srcMac + " dst=" + frame.dstMac +" type=" + protoStr + " vlan=" + std::to_string(ingressVlan) + " inPort=" + std::to_string(ingressPort));
 
     auto forwardToPort = [&](int outPort) {
         if (outPort == ingressPort) {
@@ -61,6 +64,7 @@ void Switch::handleReceive(Interface* incomingInterface, const std::vector<uint8
         if (!outIface || !outIface->isConnected()) {
             return;
         }
+        logEvent("packet", name, frame.dstMac, "L2", "Forward to port " + std::to_string(outPort));
         sendFrameOnPort(outPort, rawBytes, ingressVlan);
     };
 
@@ -73,6 +77,7 @@ void Switch::handleReceive(Interface* incomingInterface, const std::vector<uint8
         }
     }
 
+    logEvent("packet", name, frame.dstMac, "L2", "Flood to all VLAN ports");
     // Flood only to ports that can carry the same VLAN.
     for (const auto& pair : interfaces) {
         int outPort = static_cast<int>(pair.first);

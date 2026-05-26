@@ -38,6 +38,8 @@
     lastCommandOutput: "No CLI command executed yet.",
     logFilter: "all",
     commandBatchRunning: false,
+    lastEventIndex: 0,
+    eventPollInterval: null,
     canvasSize: null,
     inspectorWidth: 338,
     inspectorResize: null,
@@ -476,6 +478,7 @@
         if (els.canvasBanner) {
           els.canvasBanner.textContent = "Live backend connected. Select a node or deploy a new device.";
         }
+        startEventPolling();
         return refreshTopology();
       })
       .catch(function () {
@@ -2427,6 +2430,49 @@
 
   function updateCounters() {
     els.packetCounter.textContent = "Packets: " + state.packetCount;
+  }
+
+  function startEventPolling() {
+    if (!state.apiAvailable) return;
+    if (state.eventPollInterval) return;
+    state.lastEventIndex = 0;
+    state.eventPollInterval = window.setInterval(fetchEvents, 900);
+    fetchEvents();
+  }
+
+  function stopEventPolling() {
+    if (state.eventPollInterval) {
+      window.clearInterval(state.eventPollInterval);
+      state.eventPollInterval = null;
+    }
+  }
+
+  function fetchEvents() {
+    if (!state.apiAvailable) return;
+    fetch("/api/events?since=" + state.lastEventIndex, { cache: "no-store" })
+      .then(function (response) {
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        return response.json();
+      })
+      .then(function (data) {
+        if (data.events && data.events.length > 0) {
+          data.events.forEach(function (ev) {
+            addLog(ev.source || "Backend", (ev.protocol || "system").toLowerCase(), ev.detail || "");
+            if (ev.type === "packet" && ev.source && ev.target && ev.source !== ev.target) {
+              var srcNode = state.nodes.find(function (n) { return n.id === ev.source; });
+              var dstNode = state.nodes.find(function (n) { return n.id === ev.target; });
+              if (srcNode && dstNode) {
+                animatePacket(ev.source, ev.target, (ev.protocol || "icmp").toLowerCase());
+              }
+            }
+          });
+          state.lastEventIndex = data.totalCount;
+          updateCounters();
+        }
+      })
+      .catch(function () {
+        // silently ignore event fetch errors
+      });
   }
 
   function setEngineStatus(text) {

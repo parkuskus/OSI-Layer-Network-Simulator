@@ -1,4 +1,5 @@
 #include "web/server.hpp"
+#include "core/event_log.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -325,6 +326,7 @@ namespace magi
         size_t queryStart = request.path.find('?');
         if (queryStart != std::string::npos)
         {
+            request.query = request.path.substr(queryStart + 1);
             request.path = request.path.substr(0, queryStart);
         }
         return true;
@@ -362,6 +364,44 @@ namespace magi
             std::string output = cli.executeLine("help", false);
             std::string body = "{\"ok\":true,\"output\":\"" + jsonEscape(output) + "\"}";
             return httpResponse(200, "OK", "application/json", body);
+        }
+
+        if (request.method == "GET" && request.path == "/api/events")
+        {
+            std::string sinceStr = extractQueryParam(request.query, "since");
+            size_t sinceIndex = 0;
+            if (!sinceStr.empty())
+            {
+                try
+                {
+                    sinceIndex = static_cast<size_t>(std::stoul(sinceStr));
+                }
+                catch (...)
+                {
+                    sinceIndex = 0;
+                }
+            }
+
+            std::vector<magi::NetworkEvent> events = magi::getEventsSince(sinceIndex);
+            size_t totalCount = magi::getEventCount();
+
+            std::ostringstream body;
+            body << "{\"ok\":true,\"totalCount\":" << totalCount << ",\"events\":[";
+            for (size_t i = 0; i < events.size(); ++i)
+            {
+                if (i > 0)
+                    body << ",";
+                body << "{";
+                body << "\"timestamp\":\"" << jsonEscape(events[i].timestamp) << "\",";
+                body << "\"type\":\"" << jsonEscape(events[i].type) << "\",";
+                body << "\"source\":\"" << jsonEscape(events[i].source) << "\",";
+                body << "\"target\":\"" << jsonEscape(events[i].target) << "\",";
+                body << "\"protocol\":\"" << jsonEscape(events[i].protocol) << "\",";
+                body << "\"detail\":\"" << jsonEscape(events[i].detail) << "\"";
+                body << "}";
+            }
+            body << "]}";
+            return httpResponse(200, "OK", "application/json", body.str());
         }
 
         if (request.method == "POST" && request.path == "/api/command")
@@ -466,6 +506,21 @@ namespace magi
         while (!path.empty() && path[0] == '/')
             path.erase(path.begin());
         return documentRoot + "/" + path;
+    }
+
+    std::string WebServer::extractQueryParam(const std::string &query, const std::string &key) const
+    {
+        if (query.empty())
+            return "";
+        std::string pattern = key + "=";
+        size_t pos = query.find(pattern);
+        if (pos == std::string::npos)
+            return "";
+        size_t start = pos + pattern.size();
+        size_t end = query.find('&', start);
+        if (end == std::string::npos)
+            return query.substr(start);
+        return query.substr(start, end - start);
     }
 
     std::string WebServer::extractJsonString(const std::string &json, const std::string &key) const
