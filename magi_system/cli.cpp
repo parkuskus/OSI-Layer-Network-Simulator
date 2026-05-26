@@ -1,6 +1,7 @@
 #include "cli.hpp"
 #include "core/interface.hpp"
 #include "core/link.hpp"
+#include "core/event_log.hpp"
 #include "layer3/ip_utils.hpp"
 #include "layer4/udp.hpp"
 #include "layer4/tcp_socket.hpp"
@@ -1308,6 +1309,16 @@ namespace magi
             std::cout << " (mtu: " << mtu << " bytes)";
         }
         std::cout << "." << std::endl;
+
+        for (std::map<std::string, std::shared_ptr<Node>>::const_iterator it = nodes.begin();
+             it != nodes.end(); ++it)
+        {
+            auto router = std::dynamic_pointer_cast<Router>(it->second);
+            if (router && router->isRipEnabled())
+            {
+                router->triggerRipUpdate();
+            }
+        }
     }
 
     void CLI::cmdUnlink(const std::vector<std::string> &args)
@@ -1349,6 +1360,15 @@ namespace magi
         if (found)
         {
             std::cout << "Berhasil memutuskan koneksi antara " << endpoint1 << " dan " << endpoint2 << "." << std::endl;
+            for (std::map<std::string, std::shared_ptr<Node>>::const_iterator it = nodes.begin();
+                 it != nodes.end(); ++it)
+            {
+                auto router = std::dynamic_pointer_cast<Router>(it->second);
+                if (router && router->isRipEnabled())
+                {
+                    router->triggerRipUpdate();
+                }
+            }
         }
         else
         {
@@ -2876,6 +2896,7 @@ namespace magi
     {
         nodes.clear();
         connections.clear();
+        clearEvents();
     }
 
     void CLI::cmdHelp()
@@ -2999,4 +3020,4 @@ namespace magi
         }
     }
 
-} // namespace magi
+} 
