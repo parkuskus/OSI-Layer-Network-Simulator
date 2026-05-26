@@ -2,6 +2,7 @@
 
 #include "interface.hpp"
 #include "link.hpp"
+#include "event_log.hpp"
 #include "layer2/arp.hpp"
 #include "layer2/ethernet.hpp"
 #include "layer3/ip_utils.hpp"
@@ -74,7 +75,7 @@ namespace magi
             return fragments;
         }
 
-    } // namespace
+    } 
 
     Node::Node(const std::string &name)
         : name(name), nextPortNumber(1)
@@ -303,6 +304,12 @@ namespace magi
         {
             if (iputil::ipInCidr(destIp, routes[i].destinationCidr))
             {
+                // Skip routes using physically disconnected interfaces
+                auto physicalIface = getInterface(routes[i].outPortNumber);
+                if (!physicalIface || !physicalIface->isConnected())
+                {
+                    continue;
+                }
                 route = routes[i];
                 return true;
             }
@@ -494,6 +501,7 @@ namespace magi
         const RouterLogicalInterface *li = getLogicalInterface(portNumber, vlanId);
         if (!iface || !li || !iface->isConnected())
             return;
+        logEvent("route", name, "", "RIP", "Sending RIP update on port " + std::to_string(portNumber));
 
         std::vector<RipEntry> entries;
         buildRipEntriesForInterface(portNumber, vlanId, entries);
@@ -594,6 +602,8 @@ namespace magi
                     }
                     else if (newMetric < ripRoutes[j].metric)
                     {
+                        logEvent("route", name, sourceRouterIp, "RIP",
+                                 "Better route to " + destCidr + " via " + sourceRouterIp + " metric=" + std::to_string(newMetric));
                         ripRoutes[j].nextHopIp = sourceRouterIp;
                         ripRoutes[j].metric = static_cast<uint8_t>(newMetric);
                         ripRoutes[j].outPortNumber = ingressPort;
@@ -618,6 +628,8 @@ namespace magi
                 }
                 if (!isConnected)
                 {
+                    logEvent("route", name, sourceRouterIp, "RIP",
+                             "New route " + destCidr + " via " + sourceRouterIp + " metric=" + std::to_string(newMetric));
                     RouterRipRoute newRoute;
                     newRoute.destinationCidr = destCidr;
                     newRoute.nextHopIp = sourceRouterIp;
@@ -692,7 +704,6 @@ namespace magi
         }
     }
 
-    // ACL Methods
     int Router::addIngressACLRule(const ACLRule &rule)
     {
         return aclIngress.addRule(rule);
@@ -775,10 +786,8 @@ namespace magi
         natInsideInterfaces.erase(portNumber);
     }
 
-    // Helper methods for ACL and NAT
     bool Router::extractPortsFromPayload(const std::vector<uint8_t> &payload, uint8_t protocol, uint16_t &srcPort, uint16_t &dstPort) const
     {
-        // Only TCP (6) and UDP (17) have port numbers
         if (protocol != 6 && protocol != 17)
         {
             srcPort = 0;
@@ -786,9 +795,7 @@ namespace magi
             return false;
         }
 
-        // TCP and UDP both have the same port format at the start:
-        // Bytes 0-1: source port (network byte order)
-        // Bytes 2-3: destination port (network byte order)
+
         if (payload.size() < 4)
         {
             srcPort = 0;
@@ -846,16 +853,13 @@ namespace magi
 
         if (isOutgoing)
         {
-            // Outgoing packet: internal IP:port -> external IP:port
             if (natInsideInterfaces.find(ingressPort) != natInsideInterfaces.end())
             {
                 std::string externalIp;
                 uint16_t externalPort;
                 if (natTable.lookupInternal(packet.srcIp, srcPort, packet.protocol, externalIp, externalPort))
                 {
-                    // NAT translation found - rewrite source IP and port
                     result.srcIp = externalIp;
-                    // Rewrite source port in payload (bytes 0-1)
                     result.payload[0] = static_cast<uint8_t>((externalPort >> 8) & 0xFF);
                     result.payload[1] = static_cast<uint8_t>(externalPort & 0xFF);
                 }
@@ -863,16 +867,13 @@ namespace magi
         }
         else
         {
-            // Incoming packet: external IP:port -> internal IP:port
             if (natOutsideInterfaces.find(ingressPort) != natOutsideInterfaces.end())
             {
                 std::string internalIp;
                 uint16_t internalPort;
                 if (natTable.lookupExternal(packet.dstIp, dstPort, packet.protocol, internalIp, internalPort))
                 {
-                    // Return NAT translation found - rewrite destination IP and port
                     result.dstIp = internalIp;
-                    // Rewrite destination port in payload (bytes 2-3)
                     result.payload[2] = static_cast<uint8_t>((internalPort >> 8) & 0xFF);
                     result.payload[3] = static_cast<uint8_t>(internalPort & 0xFF);
                 }
@@ -1103,6 +1104,8 @@ namespace magi
         if (arp.opcode == 1 && logicalInterface != nullptr &&
             arp.targetIp == iputil::stripCidr(logicalInterface->cidr))
         {
+            logEvent("packet", name, arp.senderIp, "ARP",
+                     "ARP request from " + arp.senderIp + " on port " + std::to_string(portNumber));
             ARPMessage reply;
             reply.opcode = 2;
             reply.senderMac = incomingInterface->getMacAddress();
@@ -1117,11 +1120,13 @@ namespace magi
             out.vlanId = frame.vlanId;
             out.payload = reply.toBytes();
             incomingInterface->send(out.toBytes());
+            logEvent("packet", name, arp.senderIp, "ARP", "ARP reply sent to " + arp.senderIp);
             return;
         }
 
         if (arp.opcode == 2)
         {
+            logEvent("packet", name, arp.senderIp, "ARP", "ARP reply from " + arp.senderIp);
             flushQueuedPackets(portNumber, frame.vlanId, arp.senderIp);
         }
     }
@@ -1140,11 +1145,13 @@ namespace magi
 
         if (!packet.validateChecksum())
         {
+            logEvent("error", name, packet.srcIp, "IPv4", "Invalid checksum on ingress port " + std::to_string(incomingInterface->getPortNumber()));
             return;
         }
 
         const uint32_t ingressPort = incomingInterface->getPortNumber();
         arpCache[makeArpKey(ingressPort, frame.vlanId, packet.srcIp)] = frame.srcMac;
+        logEvent("packet", name, packet.srcIp, "IPv4","Received " + packet.srcIp + "->" + packet.dstIp + " proto=" + std::to_string(packet.protocol) +" on port " + std::to_string(ingressPort));
 
         // Extract port information for ACL and NAT
         uint16_t srcPort = 0, dstPort = 0;
@@ -1153,6 +1160,7 @@ namespace magi
         // Apply ingress ACL
         if (!applyIngressACL(packet, packet.protocol, srcPort, dstPort))
         {
+            logEvent("packet", name, packet.srcIp, "ACL", "Ingress ACL denied " + packet.srcIp + "->" + packet.dstIp);
             return; // Packet denied by ingress ACL
         }
 
@@ -1178,6 +1186,7 @@ namespace magi
 
             if (udp.destinationPort == kRipPort && ripEnabled)
             {
+                logEvent("route", name, packet.srcIp, "RIP", "RIP update received from " + packet.srcIp);
                 processRipUpdate(packet.srcIp, udp.payload, ingressPort, frame.vlanId);
                 if (!localInterface)
                     return;
@@ -1218,6 +1227,7 @@ namespace magi
 
         if (packet.ttl <= 1)
         {
+            logEvent("packet", name, packet.srcIp, "ICMP", "TTL exceeded for " + packet.dstIp);
             sendIcmpError(packet, kICMPTimeExceeded, 0);
             return;
         }
@@ -1225,6 +1235,7 @@ namespace magi
         RouterResolvedRoute route;
         if (!findRoute(packet.dstIp, route))
         {
+            logEvent("packet", name, packet.srcIp, "ICMP", "Destination unreachable " + packet.dstIp);
             sendIcmpError(packet, kICMPDestinationUnreachable, 0);
             return;
         }
@@ -1244,12 +1255,16 @@ namespace magi
         // Apply egress ACL check
         if (!applyEgressACL(forwarded, forwarded.protocol, srcPort, dstPort))
         {
+            logEvent("packet", name, packet.srcIp, "ACL", "Egress ACL denied " + forwarded.srcIp + "->" + forwarded.dstIp);
             return; // Packet denied by egress ACL
         }
 
         forwarded.updateChecksum();
 
         const std::string nextHopIp = route.nextHopIp.empty() ? forwarded.dstIp : route.nextHopIp;
+        logEvent("packet", name, forwarded.dstIp, "IPv4",
+                 "Forward " + forwarded.srcIp + "->" + forwarded.dstIp +
+                     " via port " + std::to_string(route.outPortNumber) + " nextHop=" + nextHopIp);
         sendPacketOut(forwarded, nextHopIp, route.outPortNumber, route.outVlanId);
     }
 
