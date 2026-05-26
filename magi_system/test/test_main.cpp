@@ -21,11 +21,12 @@ bool runMilestone2Tests();
 bool runMilestone3Tests();
 bool runMilestone4Tests();
 bool runMilestone5Tests();
+bool runComprehensiveTests();
 
 int main()
 {
     std::cout << "MAGI System test runner" << std::endl;
-    std::cout << "Milestone 1, 2, and 3 tests only" << std::endl;
+    std::cout << "Milestone 1-5 + Comprehensive Edge-Case Tests" << std::endl;
 
     int failedMilestones = 0;
 
@@ -49,15 +50,19 @@ int main()
     {
         ++failedMilestones;
     }
+    if (!runComprehensiveTests())
+    {
+        ++failedMilestones;
+    }
 
     if (failedMilestones == 0)
     {
         std::cout << std::endl
-                  << "All milestone tests passed." << std::endl;
+                  << "All milestone and comprehensive tests passed." << std::endl;
         return 0;
     }
 
     std::cout << std::endl
-              << failedMilestones << " milestone test group(s) failed." << std::endl;
+              << failedMilestones << " test group(s) failed." << std::endl;
     return 1;
 }
