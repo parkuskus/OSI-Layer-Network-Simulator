@@ -14,8 +14,383 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstring>
 #include <cstdlib>
 #include <iomanip>
+#include <stdexcept>
+
+namespace
+{
+    struct JsonValue
+    {
+        enum class Type
+        {
+            Null,
+            Bool,
+            Number,
+            String,
+            Array,
+            Object
+        };
+
+        Type type;
+        bool boolValue;
+        double numberValue;
+        std::string stringValue;
+        std::vector<JsonValue> arrayValue;
+        std::map<std::string, JsonValue> objectValue;
+
+        JsonValue()
+            : type(Type::Null), boolValue(false), numberValue(0.0)
+        {
+        }
+
+        bool isObject() const { return type == Type::Object; }
+        bool isArray() const { return type == Type::Array; }
+        bool isString() const { return type == Type::String; }
+        bool isNumber() const { return type == Type::Number; }
+
+        const JsonValue *member(const std::string &key) const
+        {
+            std::map<std::string, JsonValue>::const_iterator it = objectValue.find(key);
+            if (it == objectValue.end())
+            {
+                return nullptr;
+            }
+            return &it->second;
+        }
+
+        std::string stringOr(const std::string &fallback = "") const
+        {
+            return isString() ? stringValue : fallback;
+        }
+
+        int intOr(int fallback = 0) const
+        {
+            return isNumber() ? static_cast<int>(std::lround(numberValue)) : fallback;
+        }
+
+        uint32_t uintOr(uint32_t fallback = 0) const
+        {
+            return isNumber() && numberValue >= 0.0
+                       ? static_cast<uint32_t>(std::lround(numberValue))
+                       : fallback;
+        }
+    };
+
+    class JsonParser
+    {
+    public:
+        explicit JsonParser(const std::string &input)
+            : input(input), position(0)
+        {
+        }
+
+        JsonValue parse()
+        {
+            JsonValue value = parseValue();
+            skipWhitespace();
+            if (position != input.size())
+            {
+                throw std::runtime_error("Unexpected trailing characters in JSON.");
+            }
+            return value;
+        }
+
+    private:
+        const std::string &input;
+        size_t position;
+
+        void skipWhitespace()
+        {
+            while (position < input.size())
+            {
+                const char ch = input[position];
+                if (ch != ' ' && ch != '\t' && ch != '\n' && ch != '\r' && ch != '\f' && ch != '\v')
+                {
+                    break;
+                }
+                ++position;
+            }
+        }
+
+        char peek() const
+        {
+            return position < input.size() ? input[position] : '\0';
+        }
+
+        char consume()
+        {
+            if (position >= input.size())
+            {
+                throw std::runtime_error("Unexpected end of JSON input.");
+            }
+            return input[position++];
+        }
+
+        void expect(char ch)
+        {
+            if (consume() != ch)
+            {
+                throw std::runtime_error(std::string("Expected '") + ch + "' in JSON.");
+            }
+        }
+
+        JsonValue parseValue()
+        {
+            skipWhitespace();
+            const char ch = peek();
+            if (ch == '{')
+            {
+                return parseObject();
+            }
+            if (ch == '[')
+            {
+                return parseArray();
+            }
+            if (ch == '"')
+            {
+                JsonValue value;
+                value.type = JsonValue::Type::String;
+                value.stringValue = parseString();
+                return value;
+            }
+            if (ch == '-' || std::isdigit(static_cast<unsigned char>(ch)) != 0)
+            {
+                return parseNumber();
+            }
+            if (matchLiteral("true"))
+            {
+                JsonValue value;
+                value.type = JsonValue::Type::Bool;
+                value.boolValue = true;
+                return value;
+            }
+            if (matchLiteral("false"))
+            {
+                JsonValue value;
+                value.type = JsonValue::Type::Bool;
+                value.boolValue = false;
+                return value;
+            }
+            if (matchLiteral("null"))
+            {
+                return JsonValue();
+            }
+
+            std::ostringstream message;
+            message << "Unsupported JSON value at position " << position;
+            if (ch != '\0')
+            {
+                message << " near '" << ch << "'";
+            }
+            throw std::runtime_error(message.str());
+        }
+
+        JsonValue parseObject()
+        {
+            JsonValue value;
+            value.type = JsonValue::Type::Object;
+            expect('{');
+            skipWhitespace();
+            if (peek() == '}')
+            {
+                consume();
+                return value;
+            }
+
+            while (true)
+            {
+                skipWhitespace();
+                if (peek() != '"')
+                {
+                    throw std::runtime_error("Expected string key in JSON object.");
+                }
+                const std::string key = parseString();
+                skipWhitespace();
+                expect(':');
+                value.objectValue[key] = parseValue();
+                skipWhitespace();
+
+                const char ch = consume();
+                if (ch == '}')
+                {
+                    break;
+                }
+                if (ch != ',')
+                {
+                    throw std::runtime_error("Expected ',' or '}' in JSON object.");
+                }
+            }
+
+            return value;
+        }
+
+        JsonValue parseArray()
+        {
+            JsonValue value;
+            value.type = JsonValue::Type::Array;
+            expect('[');
+            skipWhitespace();
+            if (peek() == ']')
+            {
+                consume();
+                return value;
+            }
+
+            while (true)
+            {
+                value.arrayValue.push_back(parseValue());
+                skipWhitespace();
+
+                const char ch = consume();
+                if (ch == ']')
+                {
+                    break;
+                }
+                if (ch != ',')
+                {
+                    throw std::runtime_error("Expected ',' or ']' in JSON array.");
+                }
+            }
+
+            return value;
+        }
+
+        std::string parseString()
+        {
+            expect('"');
+            std::string result;
+
+            while (true)
+            {
+                const char ch = consume();
+                if (ch == '"')
+                {
+                    break;
+                }
+                if (ch == '\\')
+                {
+                    const char escaped = consume();
+                    switch (escaped)
+                    {
+                    case '"':
+                    case '\\':
+                    case '/':
+                        result.push_back(escaped);
+                        break;
+                    case 'b':
+                        result.push_back('\b');
+                        break;
+                    case 'f':
+                        result.push_back('\f');
+                        break;
+                    case 'n':
+                        result.push_back('\n');
+                        break;
+                    case 'r':
+                        result.push_back('\r');
+                        break;
+                    case 't':
+                        result.push_back('\t');
+                        break;
+                    case 'u':
+                    {
+                        uint32_t codePoint = 0;
+                        for (int i = 0; i < 4; ++i)
+                        {
+                            codePoint <<= 4;
+                            codePoint |= parseHexDigit(consume());
+                        }
+                        if (codePoint <= 0x7F)
+                        {
+                            result.push_back(static_cast<char>(codePoint));
+                        }
+                        else
+                        {
+                            result.push_back('?');
+                        }
+                        break;
+                    }
+                    default:
+                        throw std::runtime_error("Unsupported JSON escape sequence.");
+                    }
+                    continue;
+                }
+
+                result.push_back(ch);
+            }
+
+            return result;
+        }
+
+        JsonValue parseNumber()
+        {
+            const size_t start = position;
+            if (peek() == '-')
+            {
+                ++position;
+            }
+            while (std::isdigit(static_cast<unsigned char>(peek())) != 0)
+            {
+                ++position;
+            }
+            if (peek() == '.')
+            {
+                ++position;
+                while (std::isdigit(static_cast<unsigned char>(peek())) != 0)
+                {
+                    ++position;
+                }
+            }
+            if (peek() == 'e' || peek() == 'E')
+            {
+                ++position;
+                if (peek() == '+' || peek() == '-')
+                {
+                    ++position;
+                }
+                while (std::isdigit(static_cast<unsigned char>(peek())) != 0)
+                {
+                    ++position;
+                }
+            }
+
+            JsonValue value;
+            value.type = JsonValue::Type::Number;
+            value.numberValue = std::strtod(input.substr(start, position - start).c_str(), nullptr);
+            return value;
+        }
+
+        bool matchLiteral(const char *literal)
+        {
+            const size_t length = std::strlen(literal);
+            if (input.compare(position, length, literal) != 0)
+            {
+                return false;
+            }
+            position += length;
+            return true;
+        }
+
+        static uint32_t parseHexDigit(char ch)
+        {
+            if (ch >= '0' && ch <= '9')
+            {
+                return static_cast<uint32_t>(ch - '0');
+            }
+            if (ch >= 'a' && ch <= 'f')
+            {
+                return static_cast<uint32_t>(10 + (ch - 'a'));
+            }
+            if (ch >= 'A' && ch <= 'F')
+            {
+                return static_cast<uint32_t>(10 + (ch - 'A'));
+            }
+            throw std::runtime_error("Invalid hex digit in JSON string.");
+        }
+    };
+}
 
 namespace magi
 {
@@ -696,7 +1071,8 @@ namespace magi
         // At this point the network delivery triggers the server to respond and responses
         // are delivered back to the source host synchronously via Interface/Link.
         // Check socket states after the exchange.
-        if (client->isConnected() && serverSock->isConnected())
+        std::shared_ptr<TCPSocket> acceptedServerSocket = targetHost->acceptConnection(targetPort);
+        if (client->isConnected() && acceptedServerSocket && acceptedServerSocket->isConnected())
         {
             std::cout << "[TCP] 3-Way Handshake sukses (SYN -> SYN-ACK -> ACK)." << std::endl;
         }
@@ -1549,329 +1925,203 @@ namespace magi
             return false;
         }
 
+        std::stringstream buffer;
+        buffer << file.rdbuf();
+        file.close();
+
+        JsonValue root;
+        try
+        {
+            const std::string jsonText = buffer.str();
+            JsonParser parser(jsonText);
+            root = parser.parse();
+        }
+        catch (const std::exception &e)
+        {
+            std::cout << "Error: JSON tidak valid pada '" << filename << "': " << e.what() << std::endl;
+            return false;
+        }
+
+        if (!root.isObject())
+        {
+            std::cout << "Error: Root JSON harus berupa object." << std::endl;
+            return false;
+        }
+
         clearTopology();
 
-        std::string line;
-        std::string currentSection = "";
-
-        while (std::getline(file, line))
+        const JsonValue *hostsValue = root.member("hosts");
+        if (hostsValue != nullptr && hostsValue->isArray())
         {
-            line = trim(line);
-
-            if (line.find("\"hosts\"") != std::string::npos)
+            for (size_t i = 0; i < hostsValue->arrayValue.size(); ++i)
             {
-                currentSection = "hosts";
-            }
-            else if (line.find("\"switches\"") != std::string::npos)
-            {
-                currentSection = "switches";
-            }
-            else if (line.find("\"routers\"") != std::string::npos)
-            {
-                currentSection = "routers";
-            }
-            else if (line.find("\"links\"") != std::string::npos)
-            {
-                currentSection = "links";
-            }
-            else if (line.find("{") != std::string::npos && !currentSection.empty())
-            {
-                // Parse object
-                if (currentSection == "hosts")
+                const JsonValue &hostValue = hostsValue->arrayValue[i];
+                if (!hostValue.isObject())
                 {
-                    std::string name = "";
-                    std::string ip = "";
-                    std::string gateway = "";
-
-                    if (line.find("\"name\"") != std::string::npos)
-                    {
-                        name = extractJsonValue(line, "name");
-                    }
-                    if (line.find("\"ip_address\"") != std::string::npos)
-                    {
-                        ip = extractJsonValue(line, "ip_address");
-                    }
-                    if (line.find("\"default_gateway\"") != std::string::npos)
-                    {
-                        gateway = extractJsonValue(line, "default_gateway");
-                    }
-
-                    // Baca beberapa baris untuk data host
-                    while (line.find("}") == std::string::npos)
-                    {
-                        if (!std::getline(file, line))
-                        {
-                            break;
-                        }
-                        if (line.find("\"name\"") != std::string::npos)
-                        {
-                            name = extractJsonValue(line, "name");
-                        }
-                        else if (line.find("\"ip_address\"") != std::string::npos)
-                        {
-                            ip = extractJsonValue(line, "ip_address");
-                        }
-                        else if (line.find("\"default_gateway\"") != std::string::npos)
-                        {
-                            gateway = extractJsonValue(line, "default_gateway");
-                        }
-                    }
-
-                    if (!name.empty())
-                    {
-                        auto host = std::make_shared<Host>(name, ip, gateway);
-                        nodes[name] = host;
-                    }
+                    continue;
                 }
-                else if (currentSection == "switches")
+
+                const std::string name = hostValue.member("name") ? hostValue.member("name")->stringOr() : "";
+                const std::string ip = hostValue.member("ip_address") ? hostValue.member("ip_address")->stringOr() : "";
+                const std::string gateway = hostValue.member("default_gateway") ? hostValue.member("default_gateway")->stringOr() : "";
+                if (!name.empty())
                 {
-                    std::string name = "";
-                    uint32_t numPorts = 24;
-                    struct VlanEntry
-                    {
-                        int port;
-                        std::string mode;
-                        int vlanId;
-                    };
-                    std::vector<VlanEntry> vlanEntries;
-
-                    int braceDepth = 1;
-                    while (braceDepth > 0 && std::getline(file, line))
-                    {
-                        line = trim(line);
-
-                        if (line.find("\"name\"") != std::string::npos)
-                        {
-                            name = extractJsonValue(line, "name");
-                        }
-                        else if (line.find("\"num_ports\"") != std::string::npos)
-                        {
-                            std::string portsStr = extractJsonValue(line, "num_ports");
-                            if (!portsStr.empty())
-                                numPorts = std::stoul(portsStr);
-                        }
-                        else if (line.find("\"port\"") != std::string::npos &&
-                                 line.find("\"mode\"") != std::string::npos)
-                        {
-                            VlanEntry entry;
-                            entry.port = 0;
-                            entry.mode = extractJsonValue(line, "mode");
-                            entry.vlanId = 1;
-
-                            std::string portStr = extractJsonValue(line, "port");
-                            std::string vlanStr = extractJsonValue(line, "vlan_id");
-                            try
-                            {
-                                entry.port = std::stoi(portStr);
-                                if (!vlanStr.empty())
-                                {
-                                    entry.vlanId = std::stoi(vlanStr);
-                                }
-                            }
-                            catch (...)
-                            {
-                                entry.port = 0;
-                            }
-
-                            if (entry.port > 0 && !entry.mode.empty())
-                            {
-                                vlanEntries.push_back(entry);
-                            }
-                        }
-
-                        braceDepth += static_cast<int>(std::count(line.begin(), line.end(), '{'));
-                        braceDepth -= static_cast<int>(std::count(line.begin(), line.end(), '}'));
-                    }
-
-                    if (!name.empty())
-                    {
-                        auto sw = std::make_shared<Switch>(name, numPorts);
-                        for (size_t i = 0; i < vlanEntries.size(); ++i)
-                        {
-                            std::string mode = vlanEntries[i].mode;
-                            std::transform(mode.begin(), mode.end(), mode.begin(), ::tolower);
-                            if (mode == "access")
-                            {
-                                sw->setAccessVlan(vlanEntries[i].port, vlanEntries[i].vlanId);
-                            }
-                            else if (mode == "trunk")
-                            {
-                                sw->setTrunkVlan(vlanEntries[i].port, vlanEntries[i].vlanId);
-                            }
-                        }
-                        nodes[name] = sw;
-                    }
-                }
-                else if (currentSection == "routers")
-                {
-                    std::string name = "";
-                    uint32_t numPorts = 4;
-                    std::vector<std::pair<std::string, std::string>> interfaceConfigs;
-                    struct RouteConfig
-                    {
-                        std::string destination;
-                        std::string nextHop;
-                        std::string outInterface;
-                    };
-                    std::vector<RouteConfig> routeConfigs;
-
-                    int braceDepth = 1;
-                    while (braceDepth > 0 && std::getline(file, line))
-                    {
-                        line = trim(line);
-
-                        if (line.find("\"name\"") != std::string::npos)
-                        {
-                            name = extractJsonValue(line, "name");
-                        }
-                        else if (line.find("\"num_ports\"") != std::string::npos)
-                        {
-                            std::string portsStr = extractJsonValue(line, "num_ports");
-                            if (!portsStr.empty())
-                                numPorts = std::stoul(portsStr);
-                        }
-                        else if ((line.find("\"port\"") != std::string::npos ||
-                                  line.find("\"endpoint\"") != std::string::npos) &&
-                                 line.find("\"ip_address\"") != std::string::npos)
-                        {
-                            std::string endpoint = extractJsonValue(line, "port");
-                            if (endpoint.empty())
-                            {
-                                endpoint = extractJsonValue(line, "endpoint");
-                            }
-                            std::string vlan = extractJsonValue(line, "vlan_id");
-                            if (!vlan.empty() && endpoint.find('.') == std::string::npos)
-                            {
-                                endpoint += "." + vlan;
-                            }
-                            std::string ipAddress = extractJsonValue(line, "ip_address");
-                            if (!endpoint.empty() && !ipAddress.empty())
-                            {
-                                interfaceConfigs.push_back(std::make_pair(endpoint, ipAddress));
-                            }
-                        }
-                        else if (line.find("\"destination\"") != std::string::npos)
-                        {
-                            RouteConfig routeConfig;
-                            routeConfig.destination = extractJsonValue(line, "destination");
-                            routeConfig.nextHop = extractJsonValue(line, "next_hop");
-                            routeConfig.outInterface = extractJsonValue(line, "interface");
-                            if (routeConfig.outInterface.empty())
-                            {
-                                routeConfig.outInterface = extractJsonValue(line, "out_interface");
-                            }
-                            std::string vlan = extractJsonValue(line, "vlan_id");
-                            if (!vlan.empty() && routeConfig.outInterface.find('.') == std::string::npos)
-                            {
-                                routeConfig.outInterface += "." + vlan;
-                            }
-                            if (!routeConfig.destination.empty() &&
-                                !routeConfig.nextHop.empty() &&
-                                !routeConfig.outInterface.empty())
-                            {
-                                routeConfigs.push_back(routeConfig);
-                            }
-                        }
-
-                        braceDepth += static_cast<int>(std::count(line.begin(), line.end(), '{'));
-                        braceDepth -= static_cast<int>(std::count(line.begin(), line.end(), '}'));
-                    }
-
-                    if (!name.empty())
-                    {
-                        auto router = std::make_shared<Router>(name, numPorts);
-                        for (size_t i = 0; i < interfaceConfigs.size(); ++i)
-                        {
-                            uint32_t port = 0;
-                            int vlanId = iputil::kUntaggedVlan;
-                            if (parsePortVlanSpec(interfaceConfigs[i].first, port, vlanId))
-                            {
-                                router->configureInterface(port, vlanId, interfaceConfigs[i].second);
-                            }
-                        }
-                        for (size_t i = 0; i < routeConfigs.size(); ++i)
-                        {
-                            uint32_t outPort = 0;
-                            int outVlanId = iputil::kUntaggedVlan;
-                            if (parsePortVlanSpec(routeConfigs[i].outInterface, outPort, outVlanId))
-                            {
-                                router->addRoute(routeConfigs[i].destination,
-                                                 routeConfigs[i].nextHop,
-                                                 outPort,
-                                                 outVlanId);
-                            }
-                        }
-                        nodes[name] = router;
-                    }
-                }
-                else if (currentSection == "links")
-                {
-                    std::vector<std::string> endpoints;
-                    uint32_t delay = 0;
-                    uint32_t mtu = 1500;
-
-                    auto parseLinkLine = [&](const std::string &linkLine)
-                    {
-                        if (linkLine.find("\"endpoints\"") != std::string::npos)
-                        {
-                            size_t bracketStart = linkLine.find('[');
-                            size_t bracketEnd = linkLine.find(']');
-                            if (bracketStart != std::string::npos && bracketEnd != std::string::npos)
-                            {
-                                std::string arrayContent = linkLine.substr(bracketStart + 1, bracketEnd - bracketStart - 1);
-                                std::stringstream ss(arrayContent);
-                                std::string endpoint;
-                                while (std::getline(ss, endpoint, ','))
-                                {
-                                    endpoint = trim(endpoint);
-                                    if (endpoint.size() >= 2 && endpoint[0] == '"' && endpoint[endpoint.size() - 1] == '"')
-                                    {
-                                        endpoint = endpoint.substr(1, endpoint.size() - 2);
-                                    }
-                                    if (!endpoint.empty())
-                                    {
-                                        endpoints.push_back(endpoint);
-                                    }
-                                }
-                            }
-                        }
-                        if (linkLine.find("\"delay\"") != std::string::npos)
-                        {
-                            std::string delayStr = extractJsonValue(linkLine, "delay");
-                            if (!delayStr.empty())
-                                delay = std::stoul(delayStr);
-                        }
-                        if (linkLine.find("\"mtu\"") != std::string::npos)
-                        {
-                            std::string mtuStr = extractJsonValue(linkLine, "mtu");
-                            if (!mtuStr.empty())
-                                mtu = std::stoul(mtuStr);
-                        }
-                    };
-
-                    parseLinkLine(line);
-
-                    while (line.find("}") == std::string::npos && std::getline(file, line))
-                    {
-                        parseLinkLine(line);
-                    }
-
-                    if (mtu < 68)
-                    {
-                        mtu = 1500;
-                    }
-
-                    if (endpoints.size() >= 2)
-                    {
-                        // Gunakan cmdLink untuk membuat koneksi
-                        std::vector<std::string> linkArgs = {"link", endpoints[0], endpoints[1], std::to_string(delay), std::to_string(mtu)};
-                        cmdLink(linkArgs);
-                    }
+                    nodes[name] = std::make_shared<Host>(name, ip, gateway);
                 }
             }
         }
 
-        file.close();
+        const JsonValue *switchesValue = root.member("switches");
+        if (switchesValue != nullptr && switchesValue->isArray())
+        {
+            for (size_t i = 0; i < switchesValue->arrayValue.size(); ++i)
+            {
+                const JsonValue &switchValue = switchesValue->arrayValue[i];
+                if (!switchValue.isObject())
+                {
+                    continue;
+                }
+
+                const std::string name = switchValue.member("name") ? switchValue.member("name")->stringOr() : "";
+                const uint32_t numPorts = switchValue.member("num_ports") ? switchValue.member("num_ports")->uintOr(24) : 24;
+                if (name.empty())
+                {
+                    continue;
+                }
+
+                std::shared_ptr<Switch> sw = std::make_shared<Switch>(name, numPorts == 0 ? 24 : numPorts);
+                const JsonValue *vlansValue = switchValue.member("vlans");
+                if (vlansValue != nullptr && vlansValue->isArray())
+                {
+                    for (size_t j = 0; j < vlansValue->arrayValue.size(); ++j)
+                    {
+                        const JsonValue &vlanValue = vlansValue->arrayValue[j];
+                        if (!vlanValue.isObject())
+                        {
+                            continue;
+                        }
+
+                        const int port = vlanValue.member("port") ? vlanValue.member("port")->intOr(0) : 0;
+                        std::string mode = vlanValue.member("mode") ? vlanValue.member("mode")->stringOr() : "";
+                        const int vlanId = vlanValue.member("vlan_id") ? vlanValue.member("vlan_id")->intOr(1) : 1;
+                        std::transform(mode.begin(), mode.end(), mode.begin(), ::tolower);
+                        if (port <= 0)
+                        {
+                            continue;
+                        }
+                        if (mode == "access")
+                        {
+                            sw->setAccessVlan(port, vlanId);
+                        }
+                        else if (mode == "trunk")
+                        {
+                            sw->setTrunkVlan(port, vlanId);
+                        }
+                    }
+                }
+                nodes[name] = sw;
+            }
+        }
+
+        const JsonValue *routersValue = root.member("routers");
+        if (routersValue != nullptr && routersValue->isArray())
+        {
+            for (size_t i = 0; i < routersValue->arrayValue.size(); ++i)
+            {
+                const JsonValue &routerValue = routersValue->arrayValue[i];
+                if (!routerValue.isObject())
+                {
+                    continue;
+                }
+
+                const std::string name = routerValue.member("name") ? routerValue.member("name")->stringOr() : "";
+                const uint32_t numPorts = routerValue.member("num_ports") ? routerValue.member("num_ports")->uintOr(4) : 4;
+                if (name.empty())
+                {
+                    continue;
+                }
+
+                std::shared_ptr<Router> router = std::make_shared<Router>(name, numPorts == 0 ? 4 : numPorts);
+
+                const JsonValue *interfacesValue = routerValue.member("interfaces");
+                if (interfacesValue != nullptr && interfacesValue->isArray())
+                {
+                    for (size_t j = 0; j < interfacesValue->arrayValue.size(); ++j)
+                    {
+                        const JsonValue &ifaceValue = interfacesValue->arrayValue[j];
+                        if (!ifaceValue.isObject())
+                        {
+                            continue;
+                        }
+
+                        const uint32_t port = ifaceValue.member("port") ? ifaceValue.member("port")->uintOr(0) : 0;
+                        const int vlanId = ifaceValue.member("vlan_id") ? ifaceValue.member("vlan_id")->intOr(iputil::kUntaggedVlan) : iputil::kUntaggedVlan;
+                        const std::string cidr = ifaceValue.member("ip_address") ? ifaceValue.member("ip_address")->stringOr() : "";
+                        if (port > 0 && !cidr.empty())
+                        {
+                            router->configureInterface(port, vlanId, cidr);
+                        }
+                    }
+                }
+
+                const JsonValue *routesValue = routerValue.member("routing_table");
+                if (routesValue != nullptr && routesValue->isArray())
+                {
+                    for (size_t j = 0; j < routesValue->arrayValue.size(); ++j)
+                    {
+                        const JsonValue &routeValue = routesValue->arrayValue[j];
+                        if (!routeValue.isObject())
+                        {
+                            continue;
+                        }
+
+                        const std::string destination = routeValue.member("destination") ? routeValue.member("destination")->stringOr() : "";
+                        const std::string nextHop = routeValue.member("next_hop") ? routeValue.member("next_hop")->stringOr() : "";
+                        const uint32_t outPort = routeValue.member("interface") ? routeValue.member("interface")->uintOr(0) : 0;
+                        const int outVlanId = routeValue.member("vlan_id") ? routeValue.member("vlan_id")->intOr(iputil::kUntaggedVlan) : iputil::kUntaggedVlan;
+                        if (!destination.empty() && !nextHop.empty() && outPort > 0)
+                        {
+                            router->addRoute(destination, nextHop, outPort, outVlanId);
+                        }
+                    }
+                }
+
+                nodes[name] = router;
+            }
+        }
+
+        const JsonValue *linksValue = root.member("links");
+        if (linksValue != nullptr && linksValue->isArray())
+        {
+            for (size_t i = 0; i < linksValue->arrayValue.size(); ++i)
+            {
+                const JsonValue &linkValue = linksValue->arrayValue[i];
+                if (!linkValue.isObject())
+                {
+                    continue;
+                }
+
+                const JsonValue *endpointsValue = linkValue.member("endpoints");
+                if (endpointsValue == nullptr || !endpointsValue->isArray() || endpointsValue->arrayValue.size() < 2)
+                {
+                    continue;
+                }
+
+                const std::string endpointA = endpointsValue->arrayValue[0].stringOr();
+                const std::string endpointB = endpointsValue->arrayValue[1].stringOr();
+                const uint32_t delay = linkValue.member("delay") ? linkValue.member("delay")->uintOr(0) : 0;
+                uint32_t mtu = linkValue.member("mtu") ? linkValue.member("mtu")->uintOr(1500) : 1500;
+                if (mtu < 68)
+                {
+                    mtu = 1500;
+                }
+                if (!endpointA.empty() && !endpointB.empty())
+                {
+                    cmdLink({"link", endpointA, endpointB, std::to_string(delay), std::to_string(mtu)});
+                }
+            }
+        }
+
         return true;
     }
 
