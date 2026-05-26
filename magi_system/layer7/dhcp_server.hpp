@@ -25,6 +25,7 @@ private:
     std::shared_ptr<MagiSocket> socket;
     std::vector<std::string> pool;
     std::map<std::string, std::string> leases; // mac -> ip
+    std::string leaseCidrSuffix;
 
     void buildPoolFromHost();
     void handleMessage(const std::string &srcIp, uint16_t srcPort, const std::vector<uint8_t> &data);

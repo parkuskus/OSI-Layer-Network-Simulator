@@ -42,6 +42,31 @@ std::string DHCPClient::discover(Host *host, int timeoutMs, int maxAttempts)
     const int retryPauseMs = std::max(50, std::min(250, attemptTimeoutMs / 4));
     std::string srcIp;
     uint16_t srcPort = 0;
+    std::string assignedCidr = "";
+
+    auto parseLeaseValue = [](const std::string &leaseValue, std::string &outIp, std::string &outCidr) -> bool
+    {
+        if (leaseValue.empty())
+        {
+            return false;
+        }
+
+        if (iputil::isValidCidr(leaseValue))
+        {
+            outIp = iputil::stripCidr(leaseValue);
+            outCidr = leaseValue;
+            return true;
+        }
+
+        if (iputil::isValidIp(leaseValue))
+        {
+            outIp = leaseValue;
+            outCidr = leaseValue + "/24";
+            return true;
+        }
+
+        return false;
+    };
 
     for (int attempt = 1; attempt <= maxAttempts; ++attempt)
     {
@@ -62,10 +87,16 @@ std::string DHCPClient::discover(Host *host, int timeoutMs, int maxAttempts)
                 std::string s(resp.begin(), resp.end());
                 if (s.rfind("OFFER:", 0) == 0)
                 {
-                    std::string offerIp = s.substr(std::string("OFFER:").length());
+                    std::string offerIp;
+                    std::string offerCidr;
+                    if (!parseLeaseValue(s.substr(std::string("OFFER:").length()), offerIp, offerCidr))
+                    {
+                        break;
+                    }
                     offerReceived = true;
                     std::cout << "[DHCPClient] Received OFFER " << offerIp
                               << " on attempt " << attempt << std::endl;
+                    assignedCidr = offerCidr;
 
                     // Send REQUEST:<ip>:<mac> as broadcast
                     std::string req = std::string("REQUEST:") + offerIp + ":" + mac;
@@ -82,9 +113,15 @@ std::string DHCPClient::discover(Host *host, int timeoutMs, int maxAttempts)
                             std::string s2(r2.begin(), r2.end());
                             if (s2.rfind("ACK:", 0) == 0)
                             {
-                                std::string ip = s2.substr(std::string("ACK:").length());
+                                std::string ip;
+                                std::string cidr;
+                                if (!parseLeaseValue(s2.substr(std::string("ACK:").length()), ip, cidr))
+                                {
+                                    break;
+                                }
+
                                 // Apply IP to host
-                                host->setIpAddress(ip + "/24");
+                                host->setIpAddress(cidr.empty() ? assignedCidr : cidr);
                                 host->printInfo();
                                 sock->close();
                                 std::cout << "[DHCPClient] Lease acquired: " << ip << std::endl;

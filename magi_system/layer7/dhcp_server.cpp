@@ -21,10 +21,13 @@ namespace magi {
     void DHCPServer::buildPoolFromHost()
     {
         pool.clear();
+        leaseCidrSuffix = "/24";
         std::string cidr = host->getIpAddress();
         magi::iputil::ParsedCidr parsed;
         if (!magi::iputil::parseCidr(cidr, parsed))
             return;
+
+        leaseCidrSuffix = "/" + std::to_string(static_cast<int>(parsed.prefixLength));
 
         // start assigning from network + 10
         uint32_t base = parsed.networkValue;
@@ -95,7 +98,7 @@ namespace magi {
             if (offer.empty())
                 return;
 
-            std::string payload = std::string("OFFER:") + offer;
+            std::string payload = std::string("OFFER:") + offer + leaseCidrSuffix;
             std::vector<uint8_t> out(payload.begin(), payload.end());
             // Reply to client using unicast to srcIp:srcPort if possible, otherwise broadcast
             if (!srcIp.empty() && srcIp != "0.0.0.0")
@@ -122,7 +125,7 @@ namespace magi {
             // assign and ACK
             leases[mac] = ip;
 
-            std::string payload = std::string("ACK:") + ip;
+            std::string payload = std::string("ACK:") + ip + leaseCidrSuffix;
             std::vector<uint8_t> out(payload.begin(), payload.end());
             if (!srcIp.empty() && srcIp != "0.0.0.0")
             {
