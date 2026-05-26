@@ -4,91 +4,19 @@
 #include "layer7/magi_socket.hpp"
 #include "layer3/ip_utils.hpp"
 
-#include <algorithm>
 #include <chrono>
-#include <cctype>
 #include <iostream>
 
 namespace magi
 {
-    namespace
-    {
-        std::string lowerCopy(std::string value)
-        {
-            std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch)
-                           { return static_cast<char>(std::tolower(ch)); });
-            return value;
-        }
-
-        std::string normalizeName(const std::string &name)
-        {
-            std::string value = lowerCopy(name);
-            const std::string httpPrefix = "http://";
-            const std::string httpsPrefix = "https://";
-
-            if (value.compare(0, httpPrefix.size(), httpPrefix) == 0)
-            {
-                value = value.substr(httpPrefix.size());
-            }
-            else if (value.compare(0, httpsPrefix.size(), httpsPrefix) == 0)
-            {
-                value = value.substr(httpsPrefix.size());
-            }
-
-            if (value.compare(0, 4, "www.") == 0)
-            {
-                value = value.substr(4);
-            }
-
-            if (value.size() > 4 && value.compare(value.size() - 4, 4, ".com") == 0)
-            {
-                value = value.substr(0, value.size() - 4);
-            }
-
-            return value;
-        }
-
-        std::string aliasForHost(const std::string &hostName)
-        {
-            return std::string("www.") + normalizeName(hostName) + ".com";
-        }
-
-        std::string findLocalFallbackIp(const std::string &query, const std::vector<std::shared_ptr<Host>> &allHosts)
-        {
-            const std::string normalizedQuery = normalizeName(query);
-
-            for (const auto &host : allHosts)
-            {
-                if (!host)
-                {
-                    continue;
-                }
-
-                const std::string hostIp = iputil::stripCidr(host->getIpAddress());
-                const std::string hostName = normalizeName(host->getName());
-                const std::string hostAlias = normalizeName(aliasForHost(host->getName()));
-
-                if (hostIp == query || hostName == normalizedQuery || hostAlias == normalizedQuery)
-                {
-                    return hostIp;
-                }
-            }
-
-            if (iputil::isValidIp(query))
-            {
-                return query;
-            }
-
-            return "";
-        }
-    } // namespace
-
     std::string DNSClient::resolve(std::shared_ptr<Host> sourceHost,
                                    const std::string &name,
                                    const std::vector<std::shared_ptr<Host>> &allHosts,
                                    int timeoutMs,
                                    int attempts)
     {
+        (void)allHosts;
+
         if (!sourceHost)
         {
             return "";
@@ -118,7 +46,7 @@ namespace magi
         const uint16_t localPort = 53053;
         if (!socket->bind(bindIp, localPort))
         {
-            return findLocalFallbackIp(name, allHosts);
+            return "";
         }
 
         const std::string query = std::string("QUERY:") + name;
@@ -162,7 +90,7 @@ namespace magi
         }
 
         socket->close();
-        return findLocalFallbackIp(name, allHosts);
+        return "";
     }
 
 } // namespace magi

@@ -203,8 +203,5 @@ namespace magi
 
         // Complete teardown
         conn->close();
-
-        // Re-listen immediately to restore the server socket back to LISTEN state for subsequent queries
-        serverSocket->listen(5);
     }
 }

@@ -146,6 +146,29 @@ namespace magi
             return it->second;
         }
 
+        const std::vector<Host *> hosts = Host::getAllHosts();
+        for (size_t i = 0; i < hosts.size(); ++i)
+        {
+            Host *candidate = hosts[i];
+            if (!candidate)
+            {
+                continue;
+            }
+
+            const std::string candidateIp = iputil::stripCidr(candidate->getIpAddress());
+            if (!iputil::isValidIp(candidateIp))
+            {
+                continue;
+            }
+
+            const std::string candidateName = normalizeName(candidate->getName());
+            const std::string candidateAlias = normalizeName("www." + candidate->getName() + ".com");
+            if (normalized == candidateName || normalized == candidateAlias || normalized == candidateIp)
+            {
+                return candidateIp;
+            }
+        }
+
         return "";
     }
 

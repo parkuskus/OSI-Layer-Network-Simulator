@@ -113,7 +113,13 @@ namespace magi
 
     std::shared_ptr<MagiSocket> MagiSocket::accept()
     {
-        if (sockType != SOCK_STREAM || !tcpTransport || !tcpTransport->isConnected())
+        if (sockType != SOCK_STREAM || !host || !listening)
+        {
+            return nullptr;
+        }
+
+        std::shared_ptr<TCPSocket> acceptedTransport = host->acceptConnection(localPort);
+        if (!acceptedTransport)
         {
             return nullptr;
         }
@@ -121,11 +127,11 @@ namespace magi
         std::shared_ptr<MagiSocket> accepted = std::make_shared<MagiSocket>(host, family, sockType);
         accepted->localIp = localIp;
         accepted->localPort = localPort;
-        accepted->remoteIp = tcpTransport->remoteIP;
-        accepted->remotePort = tcpTransport->remotePort;
-        accepted->bound = bound;
+        accepted->remoteIp = acceptedTransport->remoteIP;
+        accepted->remotePort = acceptedTransport->remotePort;
+        accepted->bound = true;
         accepted->listening = false;
-        accepted->tcpTransport = tcpTransport;
+        accepted->tcpTransport = acceptedTransport;
         return accepted;
     }
 
@@ -304,6 +310,17 @@ namespace magi
             return true;
         }
 
+        if (sockType == SOCK_STREAM && listening)
+        {
+            if (host && localPort != 0)
+            {
+                host->unregisterListeningSocket(localPort);
+            }
+            tcpTransport.reset();
+            listening = false;
+            return true;
+        }
+
         if (sockType != SOCK_STREAM || !tcpTransport)
         {
             return false;
@@ -317,10 +334,6 @@ namespace magi
 
         if (tcpTransport->isClosed() && host)
         {
-            if (listening)
-            {
-                host->unregisterListeningSocket(localPort);
-            }
             if (!remoteIp.empty() && remotePort != 0)
             {
                 host->unregisterActiveSocket(localIp, localPort, remoteIp, remotePort);
