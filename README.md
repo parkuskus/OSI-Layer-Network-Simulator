@@ -27,20 +27,24 @@ Catatan: proyek tidak memerlukan dependensi eksternal khusus; cukup compiler sta
 ## Fitur Program
 
 1) Manajemen Topologi
+
 - Fungsi: pembuatan node (host, switch, router), konfigurasi port, pengkabelan antar-port, serta simpan/muat topologi ke/dari file JSON.
 - Perintah: `create`, `link`, `unlink`, `save`, `load`, `topology`, `show`.
 - Catatan: `create` menerima tipe `host|switch|router`; switch dapat dibuat dengan jumlah port tertentu (`create SW1 switch 4`). `link` menerima endpoint berupa `Node` atau `Node:Port` dan dapat diberi argumen delay (ms) untuk simulasi latensi.
 
 2) Data Link Layer (L2)
+
 - Fungsi: pemrosesan frame Ethernet, MAC learning, forwarding, flooding, dan dukungan VLAN (access/trunk).
 - Perintah/konfigurasi: `vlan access`, `vlan trunk`, `mac` (tampilkan tabel MAC per-switch).
 - ARP: host mengirim ARP request/reply untuk resolusi alamat MAC; ARP cache disimpan per-host dengan TTL sederhana.
 
 3) Network Layer (L3)
+
 - Fungsi: routing IPv4 (longest-prefix match), pengelolaan TTL, penghitungan checksum, dan pembuatan pesan ICMP (mis. destination unreachable, time exceeded).
 - Router memiliki tabel rute yang dapat dimodifikasi via `route` dan `route add`.
 
 4) Transport Layer (L4)
+
 - TCP:
   - Implementasi state machine lengkap untuk handshake (3-way), pengiriman data (PSH), dan teardown (FIN/ACK).
   - Buffer penerimaan sederhana, retransmission tidak lengkap (didaktik), dan API `tcp_connect` untuk uji koneksi.
@@ -49,6 +53,7 @@ Catatan: proyek tidak memerlukan dependensi eksternal khusus; cukup compiler sta
   - CLI: `udp_send` untuk mengirim payload UDP manual dari host.
 
 5) Application Layer (L7)
+
 - `MagiSocket`:
   - Abstraksi soket L7 di atas implementasi TCP/UDP simulator; menyediakan API connect/accept/send/recv untuk aplikasi.
 - DHCP:
@@ -61,17 +66,18 @@ Catatan: proyek tidak memerlukan dependensi eksternal khusus; cukup compiler sta
   - Server/client berinteraksi lewat `MagiSocket` dan menunjukkan alur TCP 3-way handshake, request/response, dan teardown.
 
 6) CLI Interaktif dan Automation
+
 - CLI menyediakan mode interaktif untuk menjalankan skenario manual, serta perintah yang dapat digunakan di script untuk otomatisasi (load/save topologi + run commands).
 
 7) Test Suite
+
 - Folder `test/` berisi test per milestone; ada tes integrasi L7 (contoh: DNS->HTTP) yang dapat dijalankan untuk memverifikasi alur end-to-end.
 
 8) Extensibility
+
 - Direktori `middleboxes/` dan `utils/` disediakan untuk menempatkan eksperimen tambahan seperti firewall sederhana, NAT, atau middlebox lain untuk eksperimen lebih lanjut.
 
-
-
-## Cara Build dan Run 
+## Cara Build dan Run
 
 Perintah bisa dijalankan dari root repository.
 
@@ -119,11 +125,12 @@ make run-web
 ```
 
 Catatan:
+
 - Tekan `Ctrl+C` untuk menghentikan web server.
 - Jika Makefile menyediakan target `makerun`, Anda bisa menggunakan `make makerun` sebagai shortcut CLI.
 - Untuk rebuild bersih: `make clean && make`.
 
-## Struktur Proyek 
+## Struktur Proyek
 
 ```
 magi_system/
@@ -170,6 +177,7 @@ magi_system/
 ## Perintah yang Didukung
 
 Topologi
+
 - `create <name> <host|switch|router> [ports]` — buat node
 - `link <endpointA> <endpointB> [delay_ms]` — hubungkan endpoint (`H1`, `SW1:2`)
 - `unlink <endpointA> <endpointB>` — hapus link
@@ -177,26 +185,31 @@ Topologi
 - `show <node>` — tampilkan detail node
 
 Konfigurasi alamat & routing
+
 - `setip <host> <ip/cidr>` — pasang alamat pada host
 - `setgw <host> <gateway_ip>` — set default gateway
 - `route <router>` — tampilkan tabel rute router
 - `route add <router> <dest_cidr> <next_hop_ip> <out_interface>` — tambah rute
 
 VLAN dan Switch
+
 - `vlan access <switch> <port> <vlan_id>`
 - `vlan trunk <switch> <port> <native_vlan>`
 - `mac <switch>` — tampilkan MAC table
 
 ARP / L2 utilities
+
 - `arp <host>` — tampilkan ARP cache host
 
 Pengujian & monitoring
+
 - `ping <host> <target_ip>`
 - `traceroute <host> <target_ip>`
 - `tcp_connect <host> <ip> <port>` — coba koneksi TCP
 - `udp_send <host> <ip> <src_port> <dst_port> [payload]` — kirim UDP
 
 Layanan L7 (control)
+
 - `http_get <host> <hostname>` — HTTP client yang menggunakan resolver internal
 - `http_server start <host> <file>` / `http_server stop <host>`
 - `dns_server start <host>` / `dns_server stop <host>`
@@ -204,13 +217,14 @@ Layanan L7 (control)
 - `dhcp_discover <host>` — jalankan DHCP client discovery dari host
 
 File I/O
+
 - `save [file]` — simpan topologi (default: `topology.json`)
 - `load [file]` — muat topologi dari file
 
 Umum
+
 - `help` — daftar perintah
 - `exit` / `quit` — keluar
-
 
 ## Format Endpoint
 
@@ -301,6 +315,7 @@ Menghentikan Magi System Simulator...
 ```
 
 ## Milestones
+
 Centang sesuai implementasi yang sudah selesai.
 
 * [X] **Milestone 0: Fondasi Simulasi** - Pembuatan kelas fisik (*Interface*, *Link*), struktur dasar *Packet* yang mendukung konversi ke *byte* mentah, dan memuat topologi JSON.
@@ -308,10 +323,11 @@ Centang sesuai implementasi yang sudah selesai.
 * [X] **Milestone 2: Network Layer (L3)** - Implementasi resolusi *Longest Prefix Match Routing*, *Inter-VLAN Routing*, modifikasi parameter TTL, kalkulasi *Checksum* IPv4, dan pengiriman *ICMP Error Messages*.
 * [X] **Milestone 3: Transport Layer (L4)** - Penyusunan *State Machine* TCP (*3-Way Handshake*, *Receive Buffers*, *4-Way Teardown*), protokol UDP, dan kalkulasi *Pseudo-Header*.
 * [X] **Milestone 4: Application Layer (L7)** - Pembuatan *Wrapper API* `MagiSocket` untuk mengabstraksi komunikasi OS, serta perakitan layanan mandiri DHCP, DNS, dan server HTTP.
-* [ ] **Milestone 5: Fitur Bonus** - [Sebutkan fitur lanjutan yang kelompok Anda targetkan, misal: *Topology Visualizer*, *IP Fragmentation*, *ACL*, *NAT/PAT*, *RIPv2*, atau *Asynchronous Engine*].
+* [X] **Milestone 5: Fitur Bonus** -  IP fragmentation & Reassembly, **Topology Visualizer**, ACL Firewall, NAT/PAT, Dynamic Routing, Topology Visualizer,  GUI
 
 ## Pembagian Tugas
-* **Muhammad Aufar Rizqi Kusuma (13524061):** Milestone 4
-* **Kurt Mikhael Purba (13524065):** Milestone 0
-* **Bryan Pratama Putra Hendra (13524067):** Milestone 2
-* **Philipp Hamara (13524101):** Milestone 1, 3
+
+* **Muhammad Aufar Rizqi Kusuma (13524061):** Milestone 4, 5
+* **Kurt Mikhael Purba (13524065):** Milestone 0, 5
+* **Bryan Pratama Putra Hendra (13524067):** Milestone 2, 5
+* **Philipp Hamara (13524101):** Milestone 1, 3. 5
