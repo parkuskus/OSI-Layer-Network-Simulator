@@ -44,6 +44,7 @@ SOURCES := \
     core/interface.cpp \
     core/link.cpp \
     core/node.cpp \
+    core/event_log.cpp \
     layer2/ethernet.cpp \
     layer2/arp.cpp \
     layer2/host.cpp \
@@ -75,11 +76,13 @@ TEST_TARGET := unit_tests.exe
 TEST_SOURCES := \
     test/test_main.cpp \
     $(wildcard test/milestone-*/test_*.cpp) \
+    test/comprehensive/test_comprehensive.cpp \
     cli.cpp \
     core/packet.cpp \
     core/interface.cpp \
     core/link.cpp \
     core/node.cpp \
+    core/event_log.cpp \
     layer2/ethernet.cpp \
     layer2/arp.cpp \
     layer2/host.cpp \
