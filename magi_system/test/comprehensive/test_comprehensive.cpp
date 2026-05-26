@@ -28,6 +28,7 @@ Run via test/test_main.cpp runner.
 #include "layer7/dns_client.hpp"
 #include "layer7/http_client.hpp"
 
+#include <fstream>
 #include <memory>
 #include <string>
 #include <vector>
@@ -168,8 +169,19 @@ namespace
         std::string topoAfterLoad = cli2.executeLine("topology", false);
         magi_test::expect(stats,magi_test::contains(topoAfterLoad, "H1 (host)"),"loaded topology contains host");
 
+        std::ofstream minified("__test_topology_minified.json");
+        minified << "{\"hosts\":[{\"name\":\"MH1\",\"ip_address\":\"192.168.9.2/24\",\"default_gateway\":\"192.168.9.1\"}],\"switches\":[],\"routers\":[],\"links\":[]}";
+        minified.close();
+
+        magi::CLI cli3;
+        std::string minifiedLoadOut = cli3.executeLine("load __test_topology_minified.json", false);
+        magi_test::expect(stats,magi_test::contains(minifiedLoadOut, "berhasil dimuat"),"load accepts valid minified JSON");
+        std::string topoMinified = cli3.executeLine("topology", false);
+        magi_test::expect(stats,magi_test::contains(topoMinified, "MH1 (host)"),"minified JSON load creates host");
+
         // Cleanup test file
         std::remove("__test_topology.json");
+        std::remove("__test_topology_minified.json");
 
         return stats.failed == 0;
     }
@@ -587,6 +599,29 @@ namespace
         return stats.failed == 0;
     }
 
+    bool testHTTPGetWithoutDnsServer(magi_test::TestStats &stats)
+    {
+        magi_test::printSection("Comprehensive - HTTP GET without DNS server");
+
+        auto client = std::make_shared<magi::Host>("CLI", "192.168.2.10/24", "192.168.2.1");
+        auto server = std::make_shared<magi::Host>("WEB", "192.168.2.11/24", "192.168.2.1");
+        client->getInterface(1)->setMacAddress("00:00:00:00:02:01");
+        server->getInterface(1)->setMacAddress("00:00:00:00:02:02");
+        magi::Link::create(client->getInterface(1), server->getInterface(1));
+
+        server->startHttpServer("index.html");
+        std::vector<std::shared_ptr<magi::Host>> allHosts = {server, client};
+
+        const std::string httpOut = magi_test::captureStdout([&]()
+                                                             { magi::HTTPClient::get(client, "www.web.com", allHosts); });
+
+        magi_test::expect(stats,!magi_test::contains(httpOut, "HTTP/1.1 200"),"HTTP GET without DNS server does not resolve implicitly");
+        magi_test::expect(stats,magi_test::contains(httpOut, "Tidak dapat melakukan resolusi"),"HTTP GET reports DNS resolution failure when no DNS server is active");
+
+        server->stopHttpServer();
+        return stats.failed == 0;
+    }
+
     
 
     bool testIPUtilsEdgeCases(magi_test::TestStats &stats)
@@ -709,6 +744,7 @@ bool runComprehensiveTests()
     ok = testDHCPNoServer(stats) && ok;
     ok = testDNSQueryNonExistent(stats) && ok;
     ok = testHTTPGetWithoutServer(stats) && ok;
+    ok = testHTTPGetWithoutDnsServer(stats) && ok;
 
     ok = testIPUtilsEdgeCases(stats) && ok;
     ok = testPacketSerializationEdgeCases(stats) && ok;

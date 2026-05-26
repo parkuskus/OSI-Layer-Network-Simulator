@@ -110,6 +110,8 @@ bool runMilestone5Tests()
     magi_test::expect(stats, serverSocket.listen(5), "Server socket listen succeeds");
     magi_test::expect(stats, clientSocket.bind("10.50.0.1", 49152), "Client socket bind succeeds");
     magi_test::expect(stats, clientSocket.connect("10.50.0.2", 8080), "Client socket connect succeeds on MTU-limited link");
+    std::shared_ptr<magi::MagiSocket> acceptedServerSocket = serverSocket.accept();
+    magi_test::expect(stats, acceptedServerSocket != nullptr, "Server accepts MTU-limited TCP connection");
 
     std::vector<uint8_t> bigPayload = makePatternBytes(2048);
     std::string tcpLog = magi_test::captureStdout([&]()
@@ -117,7 +119,11 @@ bool runMilestone5Tests()
         const size_t sent = clientSocket.send(bigPayload);
         magi_test::expect(stats, sent == bigPayload.size(), "Client sends payload larger than MTU"); });
 
-    std::vector<uint8_t> receivedTcp = serverSocket.recv(4096);
+    std::vector<uint8_t> receivedTcp;
+    if (acceptedServerSocket)
+    {
+        receivedTcp = acceptedServerSocket->recv(4096);
+    }
     magi_test::expect(stats, receivedTcp == bigPayload, "Server receives full TCP payload after reassembly");
     magi_test::expect(stats, magi_test::contains(tcpLog, "memecah IPv4 packet"), "Fragmentation log is emitted for large TCP payload");
 
@@ -264,6 +270,8 @@ bool runMilestone5Tests()
     magi_test::expect(stats, smallServerSocket.listen(5), "Small server listen succeeds");
     magi_test::expect(stats, smallClientSocket.bind("10.51.0.1", 49153), "Small client bind succeeds");
     magi_test::expect(stats, smallClientSocket.connect("10.51.0.2", 9090), "Small client connect succeeds");
+    std::shared_ptr<magi::MagiSocket> acceptedSmallServerSocket = smallServerSocket.accept();
+    magi_test::expect(stats, acceptedSmallServerSocket != nullptr, "Small server accepts TCP connection");
 
     std::vector<uint8_t> smallPayload = makePatternBytes(64);
     std::string smallLog = magi_test::captureStdout([&]()
@@ -271,7 +279,11 @@ bool runMilestone5Tests()
         const size_t sent = smallClientSocket.send(smallPayload);
         magi_test::expect(stats, sent == smallPayload.size(), "Client sends payload at or below MTU"); });
 
-    std::vector<uint8_t> receivedSmall = smallServerSocket.recv(1024);
+    std::vector<uint8_t> receivedSmall;
+    if (acceptedSmallServerSocket)
+    {
+        receivedSmall = acceptedSmallServerSocket->recv(1024);
+    }
     magi_test::expect(stats, receivedSmall == smallPayload, "Server receives small TCP payload without fragmentation loss");
     magi_test::expect(stats, !magi_test::contains(smallLog, "memecah IPv4 packet"), "No fragmentation log appears below MTU");
 

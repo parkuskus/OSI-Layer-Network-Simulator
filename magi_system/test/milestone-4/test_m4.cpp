@@ -192,7 +192,7 @@ bool runMilestone4Tests()
     magi_test::expect(stats, clientSocket.bind("10.0.0.2", 49152), "Client socket bind succeeds");
     magi_test::expect(stats, clientSocket.connect("10.0.0.3", 80), "Client socket connect succeeds");
     magi_test::expect(stats, clientSocket.isConnected(), "Client socket reaches ESTABLISHED");
-    magi_test::expect(stats, serverSocket.isConnected(), "Server listening socket reaches ESTABLISHED");
+    magi_test::expect(stats, serverSocket.getStateString() == "LISTEN", "Server listening socket remains in LISTEN");
 
     std::shared_ptr<magi::MagiSocket> accepted = serverSocket.accept();
     magi_test::expect(stats, accepted != nullptr, "Server accept returns connected socket");
@@ -203,16 +203,19 @@ bool runMilestone4Tests()
 
     const std::vector<uint8_t> payload = bytesFromString("MAGI_M4_SOCKET_SMOKE");
     magi_test::expect(stats, clientSocket.send(payload) == payload.size(), "Client socket send succeeds");
-    magi_test::expect(stats, serverSocket.recv(1024) == payload, "Server socket receives payload");
-
-    std::shared_ptr<magi::MagiSocket> acceptedAfterData = serverSocket.accept();
-    if (acceptedAfterData)
+    if (accepted)
     {
-        magi_test::expect(stats, acceptedAfterData->recv(1024).empty(), "Accepted socket shares drained buffer state");
+        magi_test::expect(stats, accepted->recv(1024) == payload, "Accepted socket receives payload");
     }
 
+    std::shared_ptr<magi::MagiSocket> acceptedAfterData = serverSocket.accept();
+    magi_test::expect(stats, acceptedAfterData == nullptr, "Listening socket does not re-accept an existing connection");
+
     magi_test::expect(stats, clientSocket.close(), "Client socket close succeeds");
-    std::cout << "    [SKIP] Server socket close assertion skipped due to existing shutdown bug" << std::endl;
+    if (accepted)
+    {
+        magi_test::expect(stats, accepted->close(), "Accepted socket closes after client FIN");
+    }
 
     magi::Host dhcpServerHost("DHCP-S", "10.20.0.1/24", "10.20.0.254");
     magi::Host dhcpClientHost("DHCP-C", "10.20.0.2/24", "10.20.0.1");
