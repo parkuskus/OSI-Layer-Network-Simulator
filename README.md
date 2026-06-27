@@ -4,103 +4,96 @@
   <img src="cover.png" width=800/>
 </p>
 
+## Overview
 
-## Deskripsi Singkat
-
-MAGI System adalah simulator jaringan edukasional yang mengimplementasikan lapisan OSI mulai L2 sampai L7 dalam bentuk modular. Didesain untuk percobaan topologi, pengujian protokol (ARP, IPv4, TCP/UDP) dan layanan aplikasi kecil (DHCP, DNS, HTTP) lewat antarmuka baris perintah interaktif.
+MAGI System is an educational network simulator that implements OSI layers L2 through L7 in a modular architecture. Designed for topology experimentation, protocol testing (ARP, IPv4, TCP/UDP), and lightweight application services (DHCP, DNS, HTTP) via an interactive command-line interface.
 
 ## Prerequisites
 
-- Compiler C++ (g++ atau clang) dengan dukungan C++11
+- C++ compiler (g++ or clang) with C++11 support
 - `make`
-- Terminal/shell sesuai OS:
-  - macOS/Linux: shell bawaan terminal
-  - Windows: MinGW-w64/MSYS2 dengan `g++` dan `mingw32-make` tersedia di `PATH`
+- Terminal/shell for your OS:
+  - macOS/Linux: default system terminal
+  - Windows: MinGW-w64/MSYS2 with `g++` and `mingw32-make` available in `PATH`
 
-Catatan: proyek tidak memerlukan dependensi eksternal khusus; cukup compiler standar dan Makefile.
+Note: the project has no external dependencies — only a standard compiler and Makefile are required.
 
-## Fitur Program
+## Features
 
-1) Manajemen Topologi
+### 1. Topology Management
 
-- Fungsi: pembuatan node (host, switch, router), konfigurasi port, pengkabelan antar-port, serta simpan/muat topologi ke/dari file JSON.
-- Perintah: `create`, `link`, `unlink`, `save`, `load`, `topology`, `show`.
-- Catatan: `create` menerima tipe `host|switch|router`; switch dapat dibuat dengan jumlah port tertentu (`create SW1 switch 4`). `link` menerima endpoint berupa `Node` atau `Node:Port` dan dapat diberi argumen delay (ms) untuk simulasi latensi.
+- Create nodes (host, switch, router), configure ports, cable ports together, and save/load topologies to/from JSON files.
+- Commands: `create`, `link`, `unlink`, `save`, `load`, `topology`, `show`.
+- Notes: `create` accepts types `host|switch|router`; switches can be created with a specific port count (`create SW1 switch 4`). `link` accepts endpoints as `Node` or `Node:Port` and supports an optional delay argument (ms) for latency simulation.
 
-2) Data Link Layer (L2)
+### 2. Data Link Layer (L2)
 
-- Fungsi: pemrosesan frame Ethernet, MAC learning, forwarding, flooding, dan dukungan VLAN (access/trunk).
-- Perintah/konfigurasi: `vlan access`, `vlan trunk`, `mac` (tampilkan tabel MAC per-switch).
-- ARP: host mengirim ARP request/reply untuk resolusi alamat MAC; ARP cache disimpan per-host dengan TTL sederhana.
+- Ethernet frame processing, MAC learning, forwarding, flooding, and VLAN support (access/trunk).
+- Commands: `vlan access`, `vlan trunk`, `mac` (display MAC table per switch).
+- ARP: hosts send ARP request/reply for MAC address resolution; ARP cache is maintained per host with a simple TTL.
 
-3) Network Layer (L3)
+### 3. Network Layer (L3)
 
-- Fungsi: routing IPv4 (longest-prefix match), pengelolaan TTL, penghitungan checksum, dan pembuatan pesan ICMP (mis. destination unreachable, time exceeded).
-- Router memiliki tabel rute yang dapat dimodifikasi via `route` dan `route add`.
+- IPv4 routing (longest-prefix match), TTL management, checksum calculation, and ICMP message generation (e.g. destination unreachable, time exceeded).
+- Routers have a routing table modifiable via `route` and `route add`.
 
-4) Transport Layer (L4)
+### 4. Transport Layer (L4)
 
-- TCP:
-  - Implementasi state machine lengkap untuk handshake (3-way), pengiriman data (PSH), dan teardown (FIN/ACK).
-  - Buffer penerimaan sederhana, retransmission tidak lengkap (didaktik), dan API `tcp_connect` untuk uji koneksi.
-- UDP:
-  - Datagram tanpa koneksi, digunakan oleh layanan seperti DHCP dan DNS internal.
-  - CLI: `udp_send` untuk mengirim payload UDP manual dari host.
+- **TCP:**
+  - Full state machine for 3-way handshake, data transfer (PSH), and 4-way teardown (FIN/ACK).
+  - Simple receive buffer, partial retransmission (didactic), and `tcp_connect` API for connection testing.
+- **UDP:**
+  - Connectionless datagram transport used by internal services like DHCP and DNS.
+  - CLI: `udp_send` for manually sending UDP payloads from a host.
 
-5) Application Layer (L7)
+### 5. Application Layer (L7)
 
-- `MagiSocket`:
-  - Abstraksi soket L7 di atas implementasi TCP/UDP simulator; menyediakan API connect/accept/send/recv untuk aplikasi.
-- DHCP:
-  - Server/client sederhana yang mendemonstrasikan DORA (Discover/Offer/Request/Ack) dan alokasi alamat dinamis ke host.
-- DNS:
-  - Resolver dan server UDP-based minimal yang memetakan nama host dalam topologi ke alamat IP; digunakan oleh `http_get` untuk penyelesaian nama.
-  - Catatan: bukan implementasi RFC penuh, tetapi cukup untuk skenario lab dan test integrasi.
-- HTTP:
-  - Server statis yang menyajikan file (mis. `index.html`) dari host; client melakukan GET menggunakan resolver DNS internal.
-  - Server/client berinteraksi lewat `MagiSocket` dan menunjukkan alur TCP 3-way handshake, request/response, dan teardown.
+- **MagiSocket:** L7 socket abstraction over the simulator's TCP/UDP implementation; provides connect/accept/send/recv API for applications.
+- **DHCP:** Simple server/client demonstrating the DORA sequence (Discover/Offer/Request/Ack) and dynamic address allocation to hosts.
+- **DNS:** Minimal UDP-based resolver and server mapping hostnames in the topology to IP addresses; used by `http_get` for name resolution. Not a full RFC implementation, but sufficient for lab scenarios and integration tests.
+- **HTTP:** Static file server (e.g. `index.html`) hosted on a node; client performs GET using the internal DNS resolver. Interaction goes through `MagiSocket` and demonstrates the full TCP 3-way handshake, request/response, and teardown flow.
 
-6) CLI Interaktif dan Automation
+### 6. Interactive CLI and Automation
 
-- CLI menyediakan mode interaktif untuk menjalankan skenario manual, serta perintah yang dapat digunakan di script untuk otomatisasi (load/save topologi + run commands).
+- The CLI provides an interactive mode for manual scenario execution, and commands can be scripted for automation (load/save topology + run commands).
 
-7) Test Suite
+### 7. Test Suite
 
-- Folder `test/` berisi test per milestone; ada tes integrasi L7 (contoh: DNS->HTTP) yang dapat dijalankan untuk memverifikasi alur end-to-end.
+- The `test/` folder contains per-milestone tests, including L7 integration tests (e.g. DNS to HTTP) that can be run to verify end-to-end flows.
 
-8) Extensibility
+### 8. Extensibility
 
-- Direktori `middleboxes/` dan `utils/` disediakan untuk menempatkan eksperimen tambahan seperti firewall sederhana, NAT, atau middlebox lain untuk eksperimen lebih lanjut.
+- The `middleboxes/` and `utils/` directories are available for additional experiments such as a simple firewall, NAT, or other middlebox components.
 
-## Cara Build dan Run
+## Build and Run
 
-Perintah bisa dijalankan dari root repository.
+All commands can be run from the repository root.
 
 ```bash
 make            # build CLI
-make run        # jalankan CLI interaktif
-make test       # jalankan unit/integration tests
+make run        # launch interactive CLI
+make test       # run unit/integration tests
 ```
 
-Untuk menjalankan web dashboard:
+To launch the web dashboard:
 
 ```bash
 make run-web
 ```
 
-Dashboard akan tersedia di:
+Dashboard will be available at:
 
-```text
+```
 http://127.0.0.1:8080/gui/index.html
 ```
 
-Gunakan port lain jika port 8080 sedang dipakai:
+Use a different port if 8080 is occupied:
 
 ```bash
 make run-web PORT=9090
 ```
 
-Pada Windows, gunakan `mingw32-make` jika command `make` tidak tersedia:
+On Windows, use `mingw32-make` if `make` is unavailable:
 
 ```bat
 mingw32-make run
@@ -108,9 +101,9 @@ mingw32-make run-web
 mingw32-make run-web PORT=9090
 ```
 
-Makefile akan otomatis membuat executable `.exe` di Windows dan menautkan library Winsock yang dibutuhkan web server.
+The Makefile will automatically produce a `.exe` executable on Windows and link the required Winsock libraries for the web server.
 
-Alternatif dari dalam direktori `magi_system`:
+Alternatively, from inside the `magi_system` directory:
 
 ```bash
 cd magi_system
@@ -119,13 +112,12 @@ make run
 make run-web
 ```
 
-Catatan:
+Notes:
+- Press `Ctrl+C` to stop the web server.
+- If the Makefile provides a `makerun` target, use `make makerun` as a CLI shortcut.
+- For a clean rebuild: `make clean && make`.
 
-- Tekan `Ctrl+C` untuk menghentikan web server.
-- Jika Makefile menyediakan target `makerun`, Anda bisa menggunakan `make makerun` sebagai shortcut CLI.
-- Untuk rebuild bersih: `make clean && make`.
-
-## Struktur Proyek
+## Project Structure
 
 ```
 magi_system/
@@ -135,12 +127,12 @@ magi_system/
 ├─ cli.hpp
 ├─ topology.json
 ├─ magi_system            # executable / runtime binary (build target)
-├─ build/                # objek dan dependensi yang dihasilkan
+├─ build/                 # generated object files and dependencies
 ├─ core/
 │  ├─ interface.cpp/.hpp
 │  ├─ link.cpp/.hpp
-  │  ├─ node.cpp/.hpp
-  │  └─ packet.cpp/.hpp
+│  ├─ node.cpp/.hpp
+│  └─ packet.cpp/.hpp
 ├─ gui/
 ├─ layer2/
 │  ├─ arp.cpp/.hpp
@@ -164,90 +156,84 @@ magi_system/
 ├─ test/
 │  ├─ test_common.hpp
 │  ├─ test_main.cpp
-│  └─ milestone-1/..-4/   # suite tests per milestone
+│  └─ milestone-1/..-4/   # per-milestone test suites
 ├─ utils/
-
 ```
 
-## Perintah yang Didukung
+## Supported Commands
 
-Topologi
+### Topology
 
-- `create <name> <host|switch|router> [ports]` — buat node
-- `link <endpointA> <endpointB> [delay_ms]` — hubungkan endpoint (`H1`, `SW1:2`)
-- `unlink <endpointA> <endpointB>` — hapus link
-- `topology` — tampilkan ringkasan topologi
-- `show <node>` — tampilkan detail node
+- `create <name> <host|switch|router> [ports]` — create a node
+- `link <endpointA> <endpointB> [delay_ms]` — connect endpoints (`H1`, `SW1:2`)
+- `unlink <endpointA> <endpointB>` — remove a link
+- `topology` — display topology summary
+- `show <node>` — display node details
 
-Konfigurasi alamat & routing
+### Address and Routing Configuration
 
-- `setip <host> <ip/cidr>` — pasang alamat pada host
-- `setgw <host> <gateway_ip>` — set default gateway
-- `route <router>` — tampilkan tabel rute router
-- `route add <router> <dest_cidr> <next_hop_ip> <out_interface>` — tambah rute
+- `setip <host> <ip/cidr>` — assign an address to a host
+- `setgw <host> <gateway_ip>` — set the default gateway
+- `route <router>` — display a router's routing table
+- `route add <router> <dest_cidr> <next_hop_ip> <out_interface>` — add a route
 
-VLAN dan Switch
+### VLAN and Switch
 
 - `vlan access <switch> <port> <vlan_id>`
 - `vlan trunk <switch> <port> <native_vlan>`
-- `mac <switch>` — tampilkan MAC table
+- `mac <switch>` — display MAC table
 
-ARP / L2 utilities
+### ARP / L2 Utilities
 
-- `arp <host>` — tampilkan ARP cache host
+- `arp <host>` — display a host's ARP cache
 
-Pengujian & monitoring
+### Testing and Monitoring
 
 - `ping <host> <target_ip>`
 - `traceroute <host> <target_ip>`
-- `tcp_connect <host> <ip> <port>` — coba koneksi TCP
-- `udp_send <host> <ip> <src_port> <dst_port> [payload]` — kirim UDP
+- `tcp_connect <host> <ip> <port>` — attempt a TCP connection
+- `udp_send <host> <ip> <src_port> <dst_port> [payload]` — send a UDP packet
 
-Layanan L7 (control)
+### L7 Services (Control)
 
-- `http_get <host> <hostname>` — HTTP client yang menggunakan resolver internal
+- `http_get <host> <hostname>` — HTTP client using the internal resolver
 - `http_server start <host> <file>` / `http_server stop <host>`
 - `dns_server start <host>` / `dns_server stop <host>`
 - `dhcp_server start <host>` / `dhcp_server stop <host>`
-- `dhcp_discover <host>` — jalankan DHCP client discovery dari host
+- `dhcp_discover <host>` — run DHCP client discovery from a host
 
-File I/O
+### File I/O
 
-- `save [file]` — simpan topologi (default: `topology.json`)
-- `load [file]` — muat topologi dari file
+- `save [file]` — save topology (default: `topology.json`)
+- `load [file]` — load topology from file
 
-Umum
+### General
 
-- `help` — daftar perintah
-- `exit` / `quit` — keluar
+- `help` — list available commands
+- `exit` / `quit` — exit the simulator
 
-## Format Endpoint
+## Endpoint Format
 
-* `NodeName` - Untuk host, otomatis memakai port 1
-* `NodeName:Port` - Untuk switch/router, contoh `SW1:1` atau `R1:2`
+- `NodeName` — for hosts, automatically uses port 1
+- `NodeName:Port` — for switches/routers, e.g. `SW1:1` or `R1:2`
 
-## Contoh Penggunaan
+## Usage Example
 
 ```
 Magi> create H1 host
-Host 'H1' berhasil dibuat.
-
+Host 'H1' created successfully.
 
 Magi> create H2 host
-Host 'H2' berhasil dibuat.
-
+Host 'H2' created successfully.
 
 Magi> create SW1 switch 4
-Switch 'SW1' dengan 4 port berhasil dibuat.
-
+Switch 'SW1' with 4 ports created successfully.
 
 Magi> link H1 SW1:1
-Berhasil menghubungkan H1 dengan SW1:1.
-
+Successfully linked H1 to SW1:1.
 
 Magi> link H2 SW1:2
-Berhasil menghubungkan H2 dengan SW1:2.
-
+Successfully linked H2 to SW1:2.
 
 Magi> topology
 
@@ -258,27 +244,21 @@ Nodes:
   H2 (host)
   SW1 (switch)
 
-
 Links:
   H1:1 <-> SW1:1
   H2:1 <-> SW1:2
 
-
 Magi> save my_topology.json
-Topologi berhasil disimpan ke 'my_topology.json'.
-
+Topology saved to 'my_topology.json'.
 
 Magi> exit
-Menghentikan Magi System Simulator...
-
+Shutting down Magi System Simulator...
 ```
 
-## Format File JSON
+## JSON File Format
 
 ```json
-
 {
-
   "hosts": [
     {
       "name": "H1",
@@ -311,18 +291,18 @@ Menghentikan Magi System Simulator...
 
 ## Milestones
 
-Centang sesuai implementasi yang sudah selesai.
+- [x] **Milestone 0: Simulation Foundation** — Physical class construction (Interface, Link), base Packet structure supporting raw byte conversion, and JSON topology loading.
+- [x] **Milestone 1: Data Link Layer (L2)** — Ethernet Frame implementation, VLAN-aware switching logic, and IP packet queuing via ARP Cache.
+- [x] **Milestone 2: Network Layer (L3)** — Longest Prefix Match routing resolution, inter-VLAN routing, TTL modification, IPv4 checksum calculation, and ICMP error message delivery.
+- [x] **Milestone 3: Transport Layer (L4)** — TCP state machine (3-way handshake, receive buffers, 4-way teardown), UDP protocol, and pseudo-header checksum calculation.
+- [x] **Milestone 4: Application Layer (L7)** — MagiSocket wrapper API abstracting OS communication, plus standalone DHCP, DNS, and HTTP server services.
+- [x] **Milestone 5: Bonus Features** — IP fragmentation and reassembly, topology visualizer, ACL firewall, NAT/PAT, dynamic routing, and GUI.
 
-* [X] **Milestone 0: Fondasi Simulasi** - Pembuatan kelas fisik (*Interface*, *Link*), struktur dasar *Packet* yang mendukung konversi ke *byte* mentah, dan memuat topologi JSON.
-* [X] **Milestone 1: Data Link Layer (L2)** - Implementasi *Ethernet Frame*, logika *Switching* (*VLAN-aware*), dan antrean IP Packet menggunakan *ARP Cache*.
-* [X] **Milestone 2: Network Layer (L3)** - Implementasi resolusi *Longest Prefix Match Routing*, *Inter-VLAN Routing*, modifikasi parameter TTL, kalkulasi *Checksum* IPv4, dan pengiriman *ICMP Error Messages*.
-* [X] **Milestone 3: Transport Layer (L4)** - Penyusunan *State Machine* TCP (*3-Way Handshake*, *Receive Buffers*, *4-Way Teardown*), protokol UDP, dan kalkulasi *Pseudo-Header*.
-* [X] **Milestone 4: Application Layer (L7)** - Pembuatan *Wrapper API* `MagiSocket` untuk mengabstraksi komunikasi OS, serta perakitan layanan mandiri DHCP, DNS, dan server HTTP.
-* [X] **Milestone 5: Fitur Bonus** -  IP fragmentation & Reassembly, **Topology Visualizer**, ACL Firewall, NAT/PAT, Dynamic Routing, Topology Visualizer,  GUI
+## Task Distribution
 
-## Pembagian Tugas
-
-* **Muhammad Aufar Rizqi Kusuma (13524061):** Milestone 4, 5
-* **Kurt Mikhael Purba (13524065):** Milestone 0, 5
-* **Bryan Pratama Putra Hendra (13524067):** Milestone 2, 5
-* **Philipp Hamara (13524101):** Milestone 1, 3. 5
+| Name                          | Student ID | Milestones     |
+|-------------------------------|------------|----------------|
+| Muhammad Aufar Rizqi Kusuma   | 13524061   | Milestone 4, 5 |
+| Kurt Mikhael Purba            | 13524065   | Milestone 0, 5 |
+| Bryan Pratama Putra Hendra    | 13524067   | Milestone 2, 5 |
+| Philipp Hamara                | 13524101   | Milestone 1, 3, 5 |
