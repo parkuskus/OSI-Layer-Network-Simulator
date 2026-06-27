@@ -1,14 +1,9 @@
 # MAGI System: OSI Layer Network Simulator
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/TomaszRewak/MAGI/master/examples/example_1.gif" width=800/>
+  <img src="cover.png" width=800/>
 </p>
 
-**STATUS: DARURAT LEVEL 1 (SITUASI MERAH)**
-
-**LOKASI: Markas Besar NERV, Tokyo-3 (Geofront)**
-
-Malaikat ke-11, Ireul, telah menginfeksi dan menghancurkan seluruh protokol komunikasi standar NERV. Komandan Ikari telah memberikan mandat mutlak: kru teknis elit Divisi Jaringan harus membangun kembali seluruh sistem komunikasi MAGI dari titik nol. Kehancuran Tokyo-3 menanti jika ada satu *bit* saja yang salah dalam implementasi ini.
 
 ## Deskripsi Singkat
 

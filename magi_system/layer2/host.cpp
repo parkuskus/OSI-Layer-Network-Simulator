@@ -15,6 +15,7 @@
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+#include <algorithm>
 
 namespace
 {
@@ -671,7 +672,7 @@ namespace magi
         it->second.rttMs = std::chrono::duration<double, std::milli>(now - it->second.sentAt).count();
     }
 
-    bool Host::extractEmbeddedEchoKey(const ICMPMessage &icmp, uint16_t &identifier,uint16_t &sequenceNumber) const
+    bool Host::extractEmbeddedEchoKey(const ICMPMessage &icmp, uint16_t &identifier, uint16_t &sequenceNumber) const
     {
         try
         {
@@ -910,7 +911,7 @@ namespace magi
                 return;
             }
 
-            logEvent("packet", name, packet.srcIp, "TCP","TCP " + std::to_string(tcp.sourcePort) + "->" + std::to_string(tcp.destinationPort) +" flags=0x" + std::to_string(tcp.flags) + " seq=" + std::to_string(tcp.seqNum));
+            logEvent("packet", name, packet.srcIp, "TCP", "TCP " + std::to_string(tcp.sourcePort) + "->" + std::to_string(tcp.destinationPort) + " flags=0x" + std::to_string(tcp.flags) + " seq=" + std::to_string(tcp.seqNum));
 
             const std::string key = makeSocketKey(packet.dstIp, tcp.destinationPort, packet.srcIp, tcp.sourcePort);
             std::cout << "[Host] " << name << " TCP dispatch key=" << key << std::endl;
